@@ -14,7 +14,11 @@ The package is installed by running <code>python setup.py install</code> in cons
 
 ## Getting started
 
-All functions, presented in *Sion* are described in examples. The package can be used as a standard Python library in any environment. 
+All functions, presented in *Sion* are described in examples. The package can be used as a standard Python library in any environment.
+
+To publish the results, obtained with *Sion*, the following articles must be cited:
+1. [Surface trap with adjustable ion couplings for scalable and parallel gates](https://doi.org/10.48550/arXiv.2211.07121)
+
 
 ## Features
 *   Simulation of ion motion in arbitrary polygon and point surface trap.
