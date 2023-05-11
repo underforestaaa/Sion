@@ -1,3 +1,10 @@
+"""
+Example, containing definition and simulation of the five-wire trap with
+three electrodes, containing 5 Ca ions. 
+Additionally, normal modes of the linear ion chain is calculated with
+axial_ and radial_normal_modes(), and verified with theoretical analysis.
+"""
+
 from __future__ import division
 import pylion as pl
 from pathlib import Path
@@ -64,7 +71,7 @@ ion_number = 5
 x0 = x*1e-6
 
 #insert your path to this file here
-name = Path("/Users/a.podlesnyy/Desktop/RQC/Surface Traps/FiveWireSimulation.py").stem
+name = Path(__file__).stem
 
 s = pl.Simulation(name)
 

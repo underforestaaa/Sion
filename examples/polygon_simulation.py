@@ -1,3 +1,9 @@
+"""
+This file considers essentially the same configuration, as in FiveWireSimulation file,
+but using polygon_trap() function for simulation and normal_modes() function 
+for normal mode calculation.
+"""
+
 from __future__ import division
 import pylion as pl
 from pathlib import Path
@@ -212,7 +218,6 @@ plt.xlim(-1, 2)
 plt.ylim(ymin=0)
 plt.legend(loc='upper right')
 plt.tight_layout()
-plt.savefig('radial mode frequencies', dpi=300)
 plt.show()
 
 plt.figure()
@@ -221,5 +226,4 @@ plt.colorbar()
 plt.xlabel('ion number')
 plt.ylabel('mode number')
 plt.tight_layout()
-plt.savefig('radial mode matrix', dpi=300)
 plt.show()

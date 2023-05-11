@@ -36,7 +36,7 @@ setup(
     description=short_description,
     long_description=readme,
     author="Artem Podlesnyy",
-    author_email='podlesnyi.as@phystech.edu',
+    author_email='a.podlesnyy@rqc.ru',
     packages=find_packages(include=['sion']),
     package_data={'sion': ['templates/*j2']},
     include_package_data=True,

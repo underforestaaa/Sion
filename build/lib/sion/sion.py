@@ -1,10 +1,8 @@
-import pylion
 from pylion.lammps import lammps
 import numpy as np
 import matplotlib.pyplot as plt
-from electrode import (System, PolygonPixelElectrode, euler_matrix,
-                       PointPixelElectrode, PotentialObjective,
-                       PatternRangeConstraint, shaped)
+from electrode import (System, PolygonPixelElectrode)
+import sys
 
 
 """
@@ -63,10 +61,8 @@ def five_wire_trap(uid, Omega, Urf, u_set, elec, Numb, cover=(0, 0)):
                 numt = k
                 dx = polygon[numt, 0] - polygon[numo, 0]
                 dy = polygon[numo, 1] - polygon[numt, 1]
-                c = polygon[numt, 0] * polygon[numo, 1] - \
-                    polygon[numo, 0] * polygon[numt, 1]
-                lt = (polygon[numt, 0] - polygon[numo, 0]) ** 2 + \
-                    (polygon[numt, 1] - polygon[numo, 1]) ** 2
+                c = polygon[numt, 0] * polygon[numo, 1] - polygon[numo, 0] * polygon[numt, 1]
+                lt = (polygon[numt, 0] - polygon[numo, 0]) ** 2 + (polygon[numt, 1] - polygon[numo, 1]) ** 2
 
                 lines.append(
                     f'variable ro{uid}{iterr:d}{k:d}{m:d} atom "sqrt({xo}^2+{yo}^2+{z}^2)"\n')
@@ -121,10 +117,8 @@ def five_wire_trap(uid, Omega, Urf, u_set, elec, Numb, cover=(0, 0)):
                     f'variable rtdc{uid}{ite:d}{k:d}{m:d} atom "sqrt({x2}^2+{y2}^2+{z}^2)"\n')
                 dx = polygon[numt, 0] - polygon[numo, 0]
                 dy = polygon[numo, 1] - polygon[numt, 1]
-                c = polygon[numt, 0] * polygon[numo, 1] - \
-                    polygon[numo, 0] * polygon[numt, 1]
-                lt = (polygon[numt, 0] - polygon[numo, 0]) ** 2 + \
-                    (polygon[numt, 1] - polygon[numo, 1]) ** 2
+                c = polygon[numt, 0] * polygon[numo, 1] - polygon[numo, 0] * polygon[numt, 1]
+                lt = (polygon[numt, 0] - polygon[numo, 0]) ** 2 + (polygon[numt, 1] - polygon[numo, 1]) ** 2
                 lines.append(
                     f'variable ndc{uid}{ite:d}{k:d}{m:d} atom "{u_set[ite+1]:e}*(v_rodc{uid}{ite:d}{k:d}{m:d}+v_rtdc{uid}{ite:d}{k:d}{m:d})/(v_rodc{uid}{ite:d}{k:d}{m:d}*v_rtdc{uid}{ite:d}{k:d}{m:d}*((v_rodc{uid}{ite:d}{k:d}{m:d}+v_rtdc{uid}{ite:d}{k:d}{m:d})*(v_rodc{uid}{ite:d}{k:d}{m:d}+v_rtdc{uid}{ite:d}{k:d}{m:d})-({lt:e}))*{np.pi:e})"\n')
 
@@ -160,7 +154,7 @@ def polygon_trap(uid, Omega, u_set, RFs, DCs, cover=(0, 0)):
 
     :param uid: str
         ions ID
-    :param Omega: float
+    :param Omega: list shape len(RFs)
         array of RF frequencies of each RF electrode
     :param u_set: array shape (len(RFs) + len(DCs))
         Set of the (peak) voltages on RF and DC electrodes.
@@ -212,10 +206,8 @@ def polygon_trap(uid, Omega, u_set, RFs, DCs, cover=(0, 0)):
                 numt = k
                 dx = polygon[numt, 0] - polygon[numo, 0]
                 dy = polygon[numo, 1] - polygon[numt, 1]
-                c = polygon[numt, 0] * polygon[numo, 1] - \
-                    polygon[numo, 0] * polygon[numt, 1]
-                lt = (polygon[numt, 0] - polygon[numo, 0]) ** 2 + \
-                    (polygon[numt, 1] - polygon[numo, 1]) ** 2
+                c = polygon[numt, 0] * polygon[numo, 1] - polygon[numo, 0] * polygon[numt, 1]
+                lt = (polygon[numt, 0] - polygon[numo, 0]) ** 2 + (polygon[numt, 1] - polygon[numo, 1]) ** 2
 
                 lines.append(
                     f'variable ro{uid}{iterr:d}{k:d}{m:d} atom "sqrt({xo}^2+{yo}^2+{z}^2)"\n')
@@ -270,10 +262,8 @@ def polygon_trap(uid, Omega, u_set, RFs, DCs, cover=(0, 0)):
                     f'variable rtdc{uid}{ite:d}{k:d}{m:d} atom "sqrt({x2}^2+{y2}^2+{z}^2)"\n')
                 dx = polygon[numt, 0] - polygon[numo, 0]
                 dy = polygon[numo, 1] - polygon[numt, 1]
-                c = polygon[numt, 0] * polygon[numo, 1] - \
-                    polygon[numo, 0] * polygon[numt, 1]
-                lt = (polygon[numt, 0] - polygon[numo, 0]) ** 2 + \
-                    (polygon[numt, 1] - polygon[numo, 1]) ** 2
+                c = polygon[numt, 0] * polygon[numo, 1] - polygon[numo, 0] * polygon[numt, 1]
+                lt = (polygon[numt, 0] - polygon[numo, 0]) ** 2 + (polygon[numt, 1] - polygon[numo, 1]) ** 2
                 lines.append(
                     f'variable ndc{uid}{ite:d}{k:d}{m:d} atom "({u_set[ite+nrf]:e})*(v_rodc{uid}{ite:d}{k:d}{m:d}+v_rtdc{uid}{ite:d}{k:d}{m:d})/(v_rodc{uid}{ite:d}{k:d}{m:d}*v_rtdc{uid}{ite:d}{k:d}{m:d}*((v_rodc{uid}{ite:d}{k:d}{m:d}+v_rtdc{uid}{ite:d}{k:d}{m:d})*(v_rodc{uid}{ite:d}{k:d}{m:d}+v_rtdc{uid}{ite:d}{k:d}{m:d})-({lt:e}))*{np.pi:e})"\n')
 
@@ -311,7 +301,7 @@ def point_trap(uid, Omega, trap, voltages, cover=(0, 0)):
     has infinitesemal radius, so the smaller are points, the more precise is
     the simulation (but slower).
 
-    :param: Omega: float
+    :param: Omega: list shape (number of RF points)
         array of RF frequencies of all RF points.
     :param: trap: list shape (4, shape(element))
         list of the shape [RF_areas, RF_coordinates, DC_areas, DC_coordinates],
@@ -803,10 +793,10 @@ def linearrings(r, R, res, dif, Nring, rdc=None):
                 a.append(np.pi * r0 ** 2)
             countrf += 1
     
+    countdc = 0
+    cc = 0
+    resdc = 20
     if rdc:
-        countdc = 0
-        cc = 0
-        resdc = 20
         for ket in range(Nring):
             rn = rdc/10
             while (rn < rdc):
@@ -829,13 +819,15 @@ def linearrings(r, R, res, dif, Nring, rdc=None):
 
 
 
-def n_rf_trap(Urf, DCtop, DCbottom, cwidth, rfwidth, rflength, n_rf=1, patternTop=None,
+def n_rf_trap(Urf, DCtop, DCbottom, cwidth, rfwidth, rflength, n_rf=1, L = 1e-6, patternTop=None,
               patternBot=None, cheight=0, cmax=0, plott=None):
     """
     A function for convenient definition of multi-wire traps, with n symmetrical RF lines.
 
-    :param Urf: float
-        A parametrized RF voltage for pseudopotential approximation (see examples)
+    :param Urf: list shape (n_rf, 2)
+        A parametrized RF voltage set for pseudopotential approximation
+        The voltages are given for each pair of RF electrodes as [Urf_upper, Urf_lower]
+        Urf = [Urf_inner_upper, Urf_inner_lower, Urf_outer_upper, Urf_outer_lower]
     :param DCtop: list shape (number of upper DC electrodes, 2)
         An array of [[height, width],...] of a repetetive cell
         of upper DC electrodes
@@ -846,8 +838,8 @@ def n_rf_trap(Urf, DCtop, DCbottom, cwidth, rfwidth, rflength, n_rf=1, patternTo
         A width of central DC electrode. Its length is equal to rflength
     :param rflength: float
         Length of RF line, placed symmetrically to y-axis
-    :param rfwidth: float
-        width of an RF electrode, forming the RF lines
+    :param rfwidth: list shape (n_rf, 2)
+        list of widthes of an RF electrode (top, bottom), forming the RF lines
     :param patternTop: int
         Number of repetitions of upper DC cell, if None then ==1
     :param patternBot: int
@@ -863,8 +855,6 @@ def n_rf_trap(Urf, DCtop, DCbottom, cwidth, rfwidth, rflength, n_rf=1, patternTo
     
     :return: electrodes: list shape (2, shape of RF/DC electrodes)
         electrode coordinates for sion simulation with polygon_trap()
-    :return: N: int
-        number of all DC electrodes
     :return: s: electrode.System object
         system object for electrode package.
     """
@@ -874,14 +864,16 @@ def n_rf_trap(Urf, DCtop, DCbottom, cwidth, rfwidth, rflength, n_rf=1, patternTo
     RF = []
     electrodes = []
     for i in range(n_rf):
-        rf_top = [[-rflength/2, cwidth+i*rfwidth], [rflength/2, cwidth+i*rfwidth],
-                  [rflength/2, cwidth+(i+1)*rfwidth], [-rflength/2, cwidth+(i+1)*rfwidth]]
-        rf_bottom = [[-rflength / 2,  -(i+1) * rfwidth], [rflength / 2, -(i+1) * rfwidth],
-                     [rflength / 2, -i * rfwidth], [-rflength / 2, -i * rfwidth]]
-        st = 'rf' + str(i)
-        electrodes.append([st, [rf_top, rf_bottom]])
-        RF.append(np.array(rf_top)*1e-6)
-        RF.append(np.array(rf_bottom) * 1e-6)
+        rf_top = [[-rflength/2, cwidth+i*rfwidth[i][0]], [rflength/2, cwidth+i*rfwidth[i][0]],
+                  [rflength/2, cwidth+(i+1)*rfwidth[i][0]], [-rflength/2, cwidth+(i+1)*rfwidth[i][0]]]
+        rf_bottom = [[-rflength / 2,  -(i+1) * rfwidth[i][1]], [rflength / 2, -(i+1) * rfwidth[i][1]],
+                     [rflength / 2, -i * rfwidth[i][1]], [-rflength / 2, -i * rfwidth[i][1]]]
+        st = 'rf' + str(i)+'u'
+        electrodes.append([st, [rf_top]])
+        st = 'rf' + str(i)+'d'
+        electrodes.append([st, [rf_bottom]])
+        RF.append(np.array(rf_top)*L)
+        RF.append(np.array(rf_bottom) * L)
     # define arrays of DCs considering pattern
     if patternTop is None:
         pt = 1
@@ -906,19 +898,24 @@ def n_rf_trap(Urf, DCtop, DCbottom, cwidth, rfwidth, rflength, n_rf=1, patternTo
     # define t -- 3d array containing 2d arrays of top DC electrodes
     t = [[[0 for i in range(2)] for j in range(4)] for k in range(n)]
     t = np.array(t)
-
+    lenrf_top = 0
+    lenrf_bot = 0
+    for i in range(n_rf):
+        lenrf_top += rfwidth[i][0]
+        lenrf_bot += rfwidth[i][1]
+    
     DC = []
     # starting point - central electrode, among top DCs. Considering parity of electrode number (i just want it to be BEAUTIFUL)
     if n % 2 == 0:
-        t[m] = np.array([[0, rfwidth*n_rf+cwidth + DCtop[m][0]],
-                         [DCtop[m][1], rfwidth*n_rf+cwidth + DCtop[m][0]],
-                         [DCtop[m][1], rfwidth*n_rf+cwidth],
-                         [0, rfwidth*n_rf+cwidth]])
+        t[m] = np.array([[0, lenrf_top+cwidth + DCtop[m][0]],
+                         [DCtop[m][1], lenrf_top+cwidth + DCtop[m][0]],
+                         [DCtop[m][1], lenrf_top+cwidth],
+                         [0, lenrf_top+cwidth]])
     else:
-        t[m] = np.array([[- DCtop[m][1] / 2, rfwidth*n_rf+cwidth + DCtop[m][0]],
-                         [+ DCtop[m][1] / 2, rfwidth*n_rf+cwidth + DCtop[m][0]],
-                         [+ DCtop[m][1] / 2, rfwidth*n_rf+cwidth],
-                         [- DCtop[m][1] / 2, rfwidth*n_rf+cwidth]])
+        t[m] = np.array([[- DCtop[m][1] / 2, lenrf_top+cwidth + DCtop[m][0]],
+                         [+ DCtop[m][1] / 2, lenrf_top+cwidth + DCtop[m][0]],
+                         [+ DCtop[m][1] / 2, lenrf_top+cwidth],
+                         [- DCtop[m][1] / 2, lenrf_top+cwidth]])
 
     # adding electrodes to the right of central DC
     for k in range(m, n - 1):
@@ -944,14 +941,14 @@ def n_rf_trap(Urf, DCtop, DCbottom, cwidth, rfwidth, rflength, n_rf=1, patternTo
     # starting electrode
     if nb % 2 == 0:
         b[m] = np.array(
-            [[0, -rfwidth*n_rf], [+ DCb[m][1], -rfwidth*n_rf],
-             [+ DCb[m][1], -rfwidth*n_rf - DCb[m][0]],
-             [0, -rfwidth*n_rf - DCb[m][0]]])
+            [[0, -lenrf_bot], [+ DCb[m][1], -lenrf_bot],
+             [+ DCb[m][1], -lenrf_bot - DCb[m][0]],
+             [0, -lenrf_bot - DCb[m][0]]])
     else:
-        b[m] = np.array([[- DCb[m][1] / 2, -rfwidth*n_rf],
-                         [+ DCb[m][1] / 2, -rfwidth*n_rf],
-                         [+ DCb[m][1] / 2, -rfwidth*n_rf - DCb[m][0]],
-                         [- DCb[m][1] / 2, -rfwidth*n_rf - DCb[m][0]]])
+        b[m] = np.array([[- DCb[m][1] / 2, -lenrf_bot],
+                         [+ DCb[m][1] / 2, -lenrf_bot],
+                         [+ DCb[m][1] / 2, -lenrf_bot - DCb[m][0]],
+                         [- DCb[m][1] / 2, -lenrf_bot - DCb[m][0]]])
 
     # Adding DCs. The same algorythm exept sign y-ax
     for k in range(m, nb - 1):
@@ -987,8 +984,10 @@ def n_rf_trap(Urf, DCtop, DCbottom, cwidth, rfwidth, rflength, n_rf=1, patternTo
     s = System([PolygonPixelElectrode(cover_height=cheight, cover_nmax=cmax, name=n, paths=map(np.array, p))
                 for n, p in electrodes])
     for i in range(n_rf):
-        st = 'rf' + str(i)
-        s[st].rf = Urf[i]
+        st = 'rf' + str(i) + 'u'
+        s[st].rf = Urf[i][0]
+        st = 'rf' + str(i) + 'd'
+        s[st].rf = Urf[i][1]
 
     for i in range(n):
         st = "t[" + str(i % (n // pt) + 1) + "]"
@@ -997,8 +996,8 @@ def n_rf_trap(Urf, DCtop, DCbottom, cwidth, rfwidth, rflength, n_rf=1, patternTo
         st = "b[" + str(i % (nb // pb) + 1) + "]"
         s[st].dc = 0
     s["c"].dc = 0
-    DC.extend(np.array(t)*1e-6)
-    DC.extend(np.array(b)*1e-6)
+    DC.extend(np.array(t)*L)
+    DC.extend(np.array(b)*L)
     # Exact coordinates for lion
     elec = [RF, DC]
 
@@ -1009,8 +1008,8 @@ def n_rf_trap(Urf, DCtop, DCbottom, cwidth, rfwidth, rflength, n_rf=1, patternTo
         s.plot_voltages(ax[1], u=s.rfs)
         # u = s.rfs sets the voltage-type for the voltage plot to RF-voltages (DC are not shown)
         xmax = rflength * 2 / 3
-        ymaxp = (np.max(DCtop) + rfwidth*n_rf + cwidth) * 1.2
-        ymaxn = (np.max(DCbottom) + rfwidth*n_rf) * 1.2
+        ymaxp = (np.max(DCtop) + lenrf_top + cwidth) * 1.2
+        ymaxn = (np.max(DCbottom) + lenrf_bot) * 1.2
         ax[0].set_title("colour")
         # ax[0] addresses the first plot in the subplots - set_title gives this plot a title
         ax[1].set_title("rf-voltages")
@@ -1019,10 +1018,10 @@ def n_rf_trap(Urf, DCtop, DCbottom, cwidth, rfwidth, rflength, n_rf=1, patternTo
             axi.set_xlim(-xmax, xmax)
             axi.set_ylim(-ymaxn, ymaxp)
 
-    return elec, n + nb + 1, s
+    return elec, s
 
 
-def individual_wells(Urf, width, length, dot, x, y):
+def individual_wells(Urf, width, length, dot, x, y, L = 1e-6):
     """
     
     Polygonal RF electrode with arbitrary rectangular notch generation in the
@@ -1040,36 +1039,41 @@ def individual_wells(Urf, width, length, dot, x, y):
         array of (horizontal) widthes of the notches
     :param: y: list shape (number of dots)
         array of (vertical) legthes of the notches
+    :param: L: float, optional
+        Length scale in definition of the trap. The default is 1e-6. This means, 
+        trap is defined in mkm. 
     
     :return: s: electrode.System object
         System object for electrode package simulation
     :return: electrodes: list shape (2, shape of electrodes)
         coordinates of RF electrodes for Sion simulation
     """
+    n = dot.shape[0]
+    
     rfstart = [[-length/2, -width/2], [dot[0,0]-x[0]/2, -width/2], [dot[0,0]-x[0]/2, width/2], [-length/2, width/2]]
     rfs = [rfstart]
-    n = dot.shape[0]
     
     for i in range(n-1):
         rfs.append([[dot[i, 0]-x[i]/2, dot[i, 1]+y[i]/2], [dot[i, 0]+x[i]/2, dot[i, 1]+y[i]/2], [dot[i, 0]+x[i]/2, width/2], [dot[i, 0]-x[i]/2, width/2]])
         rfs.append([[dot[i, 0]-x[i]/2, -width/2],[dot[i, 0]+x[i]/2, -width/2], [dot[i, 0]+x[i]/2, dot[i, 1]-y[i]/2], [dot[i, 0]-x[i]/2, dot[i, 1]-y[i]/2]])
-        rfs.append([[dot[i,0]+x[i], -width/2], [dot[i+1,0]-x[i], -width/2], [dot[i+1,0]-x[i], width/2],[dot[i,0]+x[i], width/2]])
+        rfs.append([[dot[i,0]+x[i]/2, -width/2], [dot[i+1,0]-x[i]/2, -width/2], [dot[i+1,0]-x[i]/2, width/2],[dot[i,0]+x[i]/2, width/2]])
     
     i = n-1
       
     rfs.append([[dot[i, 0]-x[i]/2, dot[i, 1]+y[i]/2], [dot[i, 0]+x[i]/2, dot[i, 1]+y[i]/2], [dot[i, 0]+x[i]/2, width/2], [dot[i, 0]-x[i]/2, width/2]])
     rfs.append([[dot[i, 0]-x[i]/2, -width/2],[dot[i, 0]+x[i]/2, -width/2], [dot[i, 0]+x[i]/2, dot[i, 1]-y[i]/2], [dot[i, 0]-x[i]/2, dot[i, 1]-y[i]/2]])
-    rfs.append([[dot[i,0]+x[i], -width/2], [length/2, -width/2], [length/2, width/2],[dot[i,0]+x[i], width/2]])
-    
+    rfs.append([[dot[i,0]+x[i]/2, -width/2], [length/2, -width/2], [length/2, width/2],[dot[i,0]+x[i]/2, width/2]])
 
     electrodes = [
-        ("+rf", rfs)]
+        ("rf", np.array(rfs))]
 
     
     s = System([PolygonPixelElectrode(name=f, paths=map(np.array, p))
                 for f, p in electrodes])
     
-    return s, [electrodes[0][1], [[0,0,0,0]]]
+    s[0].rf = Urf
+    
+    return s, [np.array(rfs)*L, [[[0,0],[1e-6,1e-6], [2e-6, 2e-6], [3e-6,3e-6]]]]
 
 
 
@@ -1145,8 +1149,8 @@ def axial_linear_hessian_matrix(ion_positions, omega_sec, Z, mass):
         array of final ion positions
     :param: omega_sec: float
         axial secular frequency of the trap in potential minimum
-    :param: Z: int
-        ion charge in elementary charge units
+    :param: Z: float
+        ion charge in C
     :param: mass: ion mass in kg
     
     :return: list (A_matrix, M_matrix): 
@@ -1154,7 +1158,6 @@ def axial_linear_hessian_matrix(ion_positions, omega_sec, Z, mass):
 
     """
     global amu, ech, eps0
-    Z = Z*ech
     ion_number = ion_positions.shape[0]
     axial_freqs = np.array([omega_sec for x in range(ion_number)])
     ions_mass = np.array([mass for x in range(ion_number)])
@@ -1182,8 +1185,8 @@ def radial_linear_hessian_matrix(ion_positions, omega_sec, Z, mass):
         array of final ion positions
     :param: omega_sec: float
         secular frequency of the trap in minimum
-    :param: Z: int
-        ion charge in elementary charge units
+    :param: Z: float
+        ion charge in C
     :param: mass: float
         ion mass in kg
     
@@ -1191,7 +1194,6 @@ def radial_linear_hessian_matrix(ion_positions, omega_sec, Z, mass):
         B_matrix is hessian matrix.
         """
     global amu, ech, eps0
-    Z = Z*ech
     ion_number = ion_positions.shape[0]
     radial_freqs = np.array(np.array([omega_sec for x in range(ion_number)]))
     ions_mass = np.array([mass for x in range(ion_number)])
@@ -1219,8 +1221,8 @@ def linear_axial_modes(ion_positions, omega_sec, Z, mass):
         array of final ion positions
     :param: omega_sec: float
         axial secular frequency of the trap in minimum
-    :param: Z: int
-        ion charge in elemetary charge units
+    :param: Z: float
+        ion charge in C
     :param: mass: float
         ion mass in kg
     
@@ -1247,8 +1249,8 @@ def linear_radial_modes(ion_positions, omega_sec, Z, mass):
         array of final ion positions
     :param: omega_sec: float
         axial secular frequency of the trap in minimum
-    :param: Z: int
-        ion charge in elemetary charge units
+    :param: Z: float
+        ion charge in C
     :param: mass: float
         ion mass in kg
     
@@ -1567,10 +1569,11 @@ def stability(s, M, Omega, Z, dot, L = 1e-6, plot = 1):
 
     Returns
     -------
-    params : list [areal, qreal, thetha, [a_crit_upper, a_crit_lower], q_crit]
+    params : list [areal, qreal, [alpha, thetha], [a_crit_lower, a_crit_upper], q_crit]
         Stability parameters for this trap, sorted as follows:
             areal: calculated a parameter for this trap and voltage set
             qreal: calculated q parameter for this trap and voltage set
+            alpha: relation between y and z radial DC modes 
             thetha: angle of rotation between RF nad DC potential axes
             a_crit_upper: maximal achievable positive a parameter in this trap
             a_crit_lower: maximal achievable negative a parameter in this trap
@@ -1614,42 +1617,52 @@ def stability(s, M, Omega, Z, dot, L = 1e-6, plot = 1):
     thetha = np.arccos(rot[0,0])
     c = np.cos(2*thetha)
     sin = np.sin(2*thetha)
-    params.append(thetha)
+    params.append([alpha, thetha])
 
     #boundaries
     q = np.linspace(0,1.5, 1000)
-    aa = -q**2/2
+    ax = -q**2/2
     ab = q**2/(2*alpha)
     ac = 1 - c*q - (c**2/8 + (2*sin**2*(5+alpha))/((1+alpha)*(9+alpha)))*q**2
     ad = -(1 - c*q - (c**2/8 + (2*sin**2*(5+1/alpha))/((1+1/alpha)*(9+1/alpha)))*q**2)/alpha
     
     #critical a, q
     aa = 1/(2*alpha)
-    ee = 1
-    ff = -c
-    gg = -(c**2/8 + (2*sin**2*(5+alpha))/((1+alpha)*(9+alpha)))
-    bb = -1/alpha
-    cc = c/alpha
-    dd = (c**2/8 + (2*sin**2*(5+1/alpha))/((1+1/alpha)*(9+1/alpha)))/alpha
+    bb = 1
+    cc = -c
+    dd = -(c**2/8 + (2*sin**2*(5+alpha))/((1+alpha)*(9+alpha)))
+    ee = -1/alpha
+    ff = c/alpha
+    gg = (c**2/8 + (2*sin**2*(5+1/alpha))/((1+1/alpha)*(9+1/alpha)))/alpha
     hh = -1/2
-    a_crit_upper = np.min(np.abs(np.array(([(-cc - np.sqrt(cc**2 - 4*bb*(dd-aa)))/(2*(dd-aa)), (-cc + np.sqrt(cc**2 - 4*bb*(dd-aa)))/(2*(dd-aa))]))))
-    a_crit_lower = -np.min(np.abs(np.array(([(-ff - np.sqrt(ff**2 - 4*ee*(gg-hh)))/(2*(gg-hh)), (-ff + np.sqrt(ff**2 - 4*ee*(gg-hh)))/(2*(gg-hh))]))))
     
-    params.append([a_crit_upper, a_crit_lower])
-    q_crit = np.min([(-(cc-ff) - np.sqrt((cc-ff)**2 - 4*(dd-gg)*(bb-ee)))/(2*(dd-gg)), (-(cc-ff) + np.sqrt((cc-ff)**2 - 4*(dd-gg)*(bb-ee)))/(2*(dd-gg))])
+    q_crit = np.max([(-(cc-ff) - np.sqrt((cc-ff)**2 - 4*(dd-gg)*(bb-ee)))/(2*(dd-gg)), (-(cc-ff) + np.sqrt((cc-ff)**2 - 4*(dd-gg)*(bb-ee)))/(2*(dd-gg))])
+    
+    qa_crit_upper = [(-cc - np.sqrt(cc**2 - 4*bb*(dd-aa)))/(2*(dd-aa)), (-cc + np.sqrt(cc**2 - 4*bb*(dd-aa)))/(2*(dd-aa))]
+    qa_crit_lower = [(-ff - np.sqrt(ff**2 - 4*ee*(gg-hh)))/(2*(gg-hh)), (-ff + np.sqrt(ff**2 - 4*ee*(gg-hh)))/(2*(gg-hh))]
+    if qa_crit_upper[0] < q_crit and qa_crit_upper[0] > 0:
+        a_crit_upper = qa_crit_upper[0]**2/(2*alpha)
+    if qa_crit_upper[1] < q_crit and qa_crit_upper[1] > 0:
+        a_crit_upper = qa_crit_upper[1]**2/(2*alpha)
+    if qa_crit_lower[0] < q_crit and qa_crit_lower[0] > 0:
+        a_crit_lower = -qa_crit_lower[0]**2/2
+    if qa_crit_lower[1] < q_crit and qa_crit_lower[1] > 0:
+        a_crit_lower = -qa_crit_lower[1]**2/2
+        
+    params.append([a_crit_lower, a_crit_upper])
     params.append(q_crit)
     
     if plot == 1:
         #plotting boundaries 
         fig = plt.figure()
         fig.set_size_inches(7,5)
-        plt.plot(q,aa, 'g')
+        plt.plot(q,ax, 'g')
         plt.plot(q,ab, 'g')
         plt.plot(q,ac, 'g')
         plt.plot(q,ad, 'g')
         
         #unifying noudaries to two united line so the area between them can be filled by plt.fill_between
-        y1 = np.array(list(map(max, zip(aa, ad))))
+        y1 = np.array(list(map(max, zip(ax, ad))))
         y2 = np.array(list(map(min, zip(ab, ac))))
         
         y_lim = np.max(np.array([a_crit_upper, -a_crit_lower]))
@@ -1714,7 +1727,7 @@ def v_lossf(uset, numbers, s, dots, axis, omegas, Z, M, L = 1e-6):
                     omega = (np.sqrt(Z*curv[axs]/M)/(L*2*np.pi) * 1e-6)/omegas[j][0]
                     loss += (omega - omegas[j][i]/omegas[j][0])**2
     except: 
-        loss = 1000
+        sys.exit("The ion in %s positions is lost." %i)
             
     return loss
 
@@ -1836,8 +1849,9 @@ def voltage_optimization(s, numbers, Z, M, dots, axis, omegas, start_uset, learn
     b2 = 0.999
     big = np.arange(100000)
     small = np.arange(step)
+    t = 0
     if stoch == 0:
-        for t in big:
+        for k in big:
             for kk in small:
                 grad = v_precise_grad(uset, numbers, s, dots, axis, omegas, Z, M, L)
                 m = b1*m+(1-b1)*grad
@@ -1846,13 +1860,14 @@ def voltage_optimization(s, numbers, Z, M, dots, axis, omegas, start_uset, learn
                 vtilde = v/(1-b2**(1+t))
                 v_sqrt = np.sqrt(vtilde) + np.ones(numbers[1])*1e-8
                 uset = uset - learning_rate*np.divide(mtilde,v_sqrt)
+                t+=1
             loss2 = v_lossf(uset, numbers, s, dots, axis, omegas, Z, M, L)
-            print("Iteration:", t+1, "Loss function:", loss2)
+            print("Iteration:", t, "Loss function:", loss2)
             print("uset =", list(uset),"\n")
             if loss2 <= eps:
                 break
     else:
-        for t in big:
+        for k in big:
             for kk in small:
                 grad = v_stoch_grad(uset, stoch, numbers, s, dots, axis, omegas, Z, M, L)
                 m = b1*m+(1-b1)*grad
@@ -1861,8 +1876,9 @@ def voltage_optimization(s, numbers, Z, M, dots, axis, omegas, start_uset, learn
                 vtilde = v/(1-b2**(1+t))
                 v_sqrt = np.sqrt(vtilde) + np.ones(numbers[1])*1e-8
                 uset = uset - learning_rate*np.divide(mtilde,v_sqrt)
+                t+=1
             loss2 = v_lossf(uset, numbers, s, dots, axis, omegas, Z, M, L)
-            print("Iteration:", t+1, "Loss function:", loss2)
+            print("Iteration:", t, "Loss function:", loss2)
             print("uset =", list(uset),"\n")
             if loss2 <= eps:
                 break
@@ -1872,7 +1888,7 @@ def voltage_optimization(s, numbers, Z, M, dots, axis, omegas, start_uset, learn
 
 
 
-def g_lossf(geom, n_dots, dots, Urf, width, length, axis, omegas, Z, M, L = 1e-6):
+def g_lossf(geom, n_dots, dots, positions, Urf, width, length, axis, omegas, Z, M, L = 1e-6):
     """
     Loss function for the geometry optimization.
     If the individual potential well is lost, returns 1000
@@ -1891,19 +1907,19 @@ def g_lossf(geom, n_dots, dots, Urf, width, length, axis, omegas, Z, M, L = 1e-6
     
     #obtain result of the function
     try: 
-        s = individual_wells(Urf, width, length, dots, x, y)
-        for i, pos in enumerate(dots):
+        s, coordinates = individual_wells(Urf, width, length, dots, x, y, L)
+        for i, pos in enumerate(positions):
             x1 = s.minimum(pos, axis=(0, 1, 2), coord=np.identity(3), method="Newton-CG")
             curv, mod_dir=s.modes(x1,sorted=False) 
             for j, axs in enumerate(axis):
                 omega = (np.sqrt(Z*curv[axs]/M)/(L*2*np.pi) * 1e-6)/omegas[j][0]
                 loss += (omega - omegas[j][i]/omegas[j][0])**2
     except: 
-        loss = 1000
+        sys.exit("The ion in %s positions is lost." %i)
             
     return loss
 
-def g_stoch_grad(geom, stoch, n_dots, dots, Urf, width, length, axis, omegas, Z, M, L = 1e-6):
+def g_stoch_grad(geom, stoch, n_dots, dots, positions, Urf, width, length, axis, omegas, Z, M, L = 1e-6):
     """
     Calculates stochastic gradient, where partial derivative is calculated 
     only for "stoch:int" randomly chosen parameters
@@ -1915,20 +1931,20 @@ def g_stoch_grad(geom, stoch, n_dots, dots, Urf, width, length, axis, omegas, Z,
 
     """
     
-    df = np.zeros(n_dots)
+    df = np.zeros(n_dots*2)
     param = np.random.choice(n_dots, stoch, replace = 'False')
     param = np.sort(param)
     for i in param:
         geom[i] += 1e-8
-        fplus = g_lossf(geom, n_dots, dots, Urf, width, length, axis, omegas, Z, M, L)
+        fplus = g_lossf(geom, n_dots, dots, positions, Urf, width, length, axis, omegas, Z, M, L)
         geom[i] -= 2e-8
-        fmin = g_lossf(geom, n_dots, dots, Urf, width, length, axis, omegas, Z, M, L)
+        fmin = g_lossf(geom, n_dots, dots, positions, Urf, width, length, axis, omegas, Z, M, L)
         geom[i] += 1e-8
         df[i]  = (fplus - fmin)/(2e-8)
         
     return np.array(df)
 
-def g_precise_grad(geom, n_dots, dots, Urf, width, length, axis, omegas, Z, M, L = 1e-6):
+def g_precise_grad(geom, n_dots, dots, positions, Urf, width, length, axis, omegas, Z, M, L = 1e-6):
     """
     Calculates exact gradient of loss function
 
@@ -1938,12 +1954,12 @@ def g_precise_grad(geom, n_dots, dots, Urf, width, length, axis, omegas, Z, M, L
         Calculated gradient
     """
     
-    df = np.zeros(n_dots)
+    df = np.zeros(n_dots*2)
     for i, el in enumerate(df):
         geom[i] += 1e-8
-        fplus = g_lossf(geom, n_dots, dots, Urf, width, length, axis, omegas, Z, M, L)
+        fplus = g_lossf(geom, n_dots, dots, positions, Urf, width, length, axis, omegas, Z, M, L)
         geom[i] -= 2e-8
-        fmin = g_lossf(geom, n_dots, dots, Urf, width, length, axis, omegas, Z, M, L)
+        fmin = g_lossf(geom, n_dots, dots, positions, Urf, width, length, axis, omegas, Z, M, L)
         geom[i] += 1e-8
         df[i]  = (fplus - fmin)/(2e-8)
         
@@ -1951,7 +1967,7 @@ def g_precise_grad(geom, n_dots, dots, Urf, width, length, axis, omegas, Z, M, L
 
 
 
-def geometry_optimization(Urf, width, length, x_start, y_start, Z, M, dots, axis, omegas, learning_rate, stoch = 0, eps = 1e-8, L = 1e-6, step = 100):
+def geometry_optimization(Urf, width, length, x_start, y_start, Z, M, dots, positions, axis, omegas, learning_rate, stoch = 0, eps = 1e-8, L = 1e-6, step = 100):
     """
     Function, optimizating the shape of RF electrode from the individual_wells()
     function, to obtain individual wells with the required secular frequencies.
@@ -1976,7 +1992,9 @@ def geometry_optimization(Urf, width, length, x_start, y_start, Z, M, dots, axis
         Ion charge
     M : float
         Ion mass
-    dots : list shape (number of positions, 3)
+    dots : list shape (number of individual wells, 2)
+        Positions, at which  individual wells are produced
+    positions : list shape (number of ions, 3)
         Positions, at which secular frequencies are calculated
     axis : list shape (number of axes)
         List of all principle axes, at which the desired secular frequencies
@@ -2015,45 +2033,48 @@ def geometry_optimization(Urf, width, length, x_start, y_start, Z, M, dots, axis
     
     geom = np.append(x_start, y_start)
     n_dots = np.array(dots).shape[0]
-    
-    loss2 = g_lossf(geom, n_dots, dots, Urf, width, length, axis, omegas, Z, M, L)
+
+    loss2 = g_lossf(geom, n_dots, dots, positions, Urf, width, length, axis, omegas, Z, M, L)
     print("Initial loss:", loss2)
     
-    m = g_precise_grad(geom, n_dots, dots, Urf, width, length, axis, omegas, Z, M, L)
+    m = g_precise_grad(geom, n_dots, dots, positions, Urf, width, length, axis, omegas, Z, M, L)
     v = np.square(m)
     b1 = 0.9
     b2 = 0.999
     big = np.arange(100000)
     small = np.arange(step)
+    t = 0
     if stoch == 0:
-        for t in big:
+        for k in big:
             for kk in small:
-                grad = g_precise_grad(geom, n_dots, dots, Urf, width, length, axis, omegas, Z, M, L)
+                grad = g_precise_grad(geom, n_dots, dots, positions, Urf, width, length, axis, omegas, Z, M, L)
                 m = b1*m+(1-b1)*grad
                 v = b2*v+(1-b2)*np.square(grad)
                 mtilde = m/(1-b1**(1+t))
                 vtilde = v/(1-b2**(1+t))
-                v_sqrt = np.sqrt(vtilde) + np.ones(n_dots)*1e-8
+                v_sqrt = np.sqrt(vtilde) + np.ones(n_dots*2)*1e-8
                 geom = geom - learning_rate*np.divide(mtilde,v_sqrt)
-            loss2 = g_lossf(geom, n_dots, dots, Urf, width, length, axis, omegas, Z, M, L)
+                t+=1
+            loss2 = g_lossf(geom, n_dots, dots, positions, Urf, width, length, axis, omegas, Z, M, L)
             x = geom[0:n_dots]
             y = geom[n_dots:2*n_dots]
-            print("Iteration:", t+1, "Loss function:", loss2)
+            print("Iteration:", t, "Loss function:", loss2)
             print("x =", list(x),"\ny =", list(y))
             if loss2 <= eps:
                 break
     else:
-        for t in big:
+        for k in big:
             for kk in small:
-                grad = g_stoch_grad(geom, stoch, n_dots, dots, Urf, width, length, axis, omegas, Z, M, L)
+                grad = g_stoch_grad(geom, stoch, n_dots, dots, positions, Urf, width, length, axis, omegas, Z, M, L)
                 m = b1*m+(1-b1)*grad
                 v = b2*v+(1-b2)*np.square(grad)
                 mtilde = m/(1-b1**(1+t))
                 vtilde = v/(1-b2**(1+t))
-                v_sqrt = np.sqrt(vtilde) + np.ones(n_dots)*1e-8
+                v_sqrt = np.sqrt(vtilde) + np.ones(n_dots*2)*1e-8
                 geom = geom - learning_rate*np.divide(mtilde,v_sqrt)
-            loss2 = g_lossf(geom, n_dots, dots, Urf, width, length, axis, omegas, Z, M, L)
-            print("Iteration:", t+1, "Loss function:", loss2)
+                t+=1
+            loss2 = g_lossf(geom, n_dots, dots, positions, Urf, width, length, axis, omegas, Z, M, L)
+            print("Iteration:", t, "Loss function:", loss2)
             x = geom[0:n_dots]
             y = geom[n_dots:2*n_dots]
             print("x =", list(x),"\ny =", list(y))
