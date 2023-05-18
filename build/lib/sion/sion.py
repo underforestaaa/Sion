@@ -822,7 +822,7 @@ def linearrings(r, R, res, dif, Nring, rdc=None):
 def n_rf_trap(Urf, DCtop, DCbottom, cwidth, rfwidth, rflength, n_rf=1, L = 1e-6, patternTop=None,
               patternBot=None, cheight=0, cmax=0, plott=None):
     """
-    A function for convenient definition of multi-wire traps, with n symmetrical RF lines.
+    A function for convenient definition of multi-wire traps, with n asymmetrical RF lines.
 
     :param Urf: list shape (n_rf, 2)
         A parametrized RF voltage set for pseudopotential approximation
@@ -1428,7 +1428,7 @@ def anharmonics(s, minimums, axis, L = 1e-6):
     Returns
     -------
     results : list shape [number of dots, 3]
-        array of anharmonic scale lengths in each calculated potential minimum. 
+        array of anharmonic scale lengths (in m) in each calculated potential minimum. 
         Given as  [l2, l3, l4], for ln being scale length of the n's potential term
 
     """
@@ -1437,30 +1437,29 @@ def anharmonics(s, minimums, axis, L = 1e-6):
     for pos in minimums:
         x1 = s.minimum(np.array(pos), axis=(0, 1, 2), coord=np.identity(3), method="Newton-CG")
         curv_z, mod_dir=s.modes(x1,sorted=False)
-        curv_z *= L**2
+        curv_z *= L**(-2)
         inv = np.linalg.inv(mod_dir)
         pot = s.potential(x1, derivative = 4)[0,axis,axis]
         eig_pot = np.dot(inv, np.dot(pot, mod_dir))
-        eig = eig_pot[axis,axis]*L**4
+        eig = eig_pot[axis,axis]*L**(-4)
         k2 = curv_z[axis]*ech
         k4 = eig*ech
         pot3 = s.potential(x1, derivative = 3)[0,axis]
         eig_pot3 = np.dot(inv, np.dot(pot3, mod_dir))
-        eig3 = eig_pot3[axis,axis]*L**3
+        eig3 = eig_pot3[axis,axis]*L**(-3)
         k3 = eig3*ech
         l2 = (ech**2/(4*np.pi*eps0*k2))**(1/3)
-        l3 = l2*(k3/k2)**(1/(2-3))
-        l4 = l2*(k4/k2)**(1/(2-4))
+        l3 = (k3/k2)**(1/(2-3))
+        l4 = np.sign(k4)*(np.abs(k4)/k2)**(1/(2-4))
         results.append([l2, l3, l4])
     
     return results
 
 
-def anharmonic_axial_modes(s, ion_positions, masses, axis, L = 1e-6):
+def anharmonic_modes(s, ion_positions, masses, axis, poles = [1,1], L = 1e-6):
     """
     Anharmonic normal modes along the chosen pricniple axis of oscillation
-    in a linear ion chain,
-    considering hexapole and octopole anharmonicities.
+    in a linear ion chain, considering hexapole and octopole anharmonicities.
     Defined for the mixed species ion crystals in individual potential wells
 
     Parameters
@@ -1474,6 +1473,11 @@ def anharmonic_axial_modes(s, ion_positions, masses, axis, L = 1e-6):
     axis : int
         axis, along which the normal modes are investigated. 
         Determined by respecting int: (0, 1, 2) = (x, y, z)
+    poles : list shape (2)
+        Determines which anharmonic terms to account. The default is 
+        (1, 1), which means both hexapole and octopole anharmonicities are accounted
+        if (1, 0) -- only hexapole (n = 3)
+        if (0, 1) -- only octopole (n = 4)
     L : float, optional
         Length scale in definition of the trap. The default is 1e-6. 
         This means, trap is defined in mkm. 
@@ -1495,19 +1499,19 @@ def anharmonic_axial_modes(s, ion_positions, masses, axis, L = 1e-6):
     B = [[2, -2], [-1, 1], [-1, 1]]
     
     for pos in ion_positions:
-        x1 = s.minimum(np.array(pos), axis=(0, 1, 2), coord=np.identity(3), method="Newton-CG")
-        minims.append(x1)
+        x1 = s.minimum(np.array(pos)/L, axis=(0, 1, 2), coord=np.identity(3), method="Newton-CG")
+        minims.append(x1[0])
         curv_z, mod_dir=s.modes(x1,sorted=False)
-        curv_z *= L**2
+        curv_z *= L**(-2)
         inv = np.linalg.inv(mod_dir)
         pot = s.potential(x1, derivative = 4)[0,axis,axis]
         eig_pot = np.dot(inv, np.dot(pot, mod_dir))
-        eig = eig_pot[axis,axis]*L**4
+        eig = eig_pot[axis,axis]*L**(-4)
         k2 = curv_z[axis]*ech
         k4 = eig*ech
         pot3 = s.potential(x1, derivative = 3)[0,axis]
         eig_pot3 = np.dot(inv, np.dot(pot3, mod_dir))
-        eig3 = eig_pot3[axis,axis]*L**3
+        eig3 = eig_pot3[axis,axis]*L**(-3)
         k3 = eig3*ech
         l = (ech**2/(4*np.pi*eps0*k2))**(1/3)
         alpha2.append(k2)
@@ -1516,25 +1520,25 @@ def anharmonic_axial_modes(s, ion_positions, masses, axis, L = 1e-6):
     
     lo = (ech**2/(4*np.pi*eps0*alpha2[0]))**(1/3)
     ion_positions = np.array(ion_positions)/lo
-    minims = np.array(minims)/lo
+    minims = np.array(minims)*L/lo
     hessian = np.zeros([n,n])
     for i in range(n):
-        hessian[i,i] = alpha2[i]/alpha2[0] + 2*alpha3[i]/(alpha2[i]/alpha2[0])*np.abs(ion_positions[i]-minims[i]) + 6*alpha4[i]*(alpha2[i]/alpha2[0])*(ion_positions[i]-minims[i])**2
+        hessian[i,i] = alpha2[i]/alpha2[0] + poles[0]*2*alpha3[i]/(alpha2[i]/alpha2[0])*np.abs(ion_positions[i][0]-minims[i]) + poles[1]*6*alpha4[i]/(alpha2[i]/alpha2[0])*(ion_positions[i][0]-minims[i])**2
         coulomb = 0
         for p in range(n):
             if p != i:
-                coulomb += B[axis][0]/(np.abs(ion_positions[i]-ion_positions[p]))**3
+                coulomb += B[axis][0]/(np.abs(ion_positions[i][0]-ion_positions[p][0]))**3
         hessian[i,i] += coulomb
     for i in range(n):
         for j in range(n):
             if i!=j:
-                hessian[i,j] = B[axis][1]/(np.abs(ion_positions[i]-ion_positions[j]))**3
+                hessian[i,j] = B[axis][1]/(np.abs(ion_positions[i][0]-ion_positions[j][0]))**3
     for i, m in enumerate(masses):
         masses[i] = 1/m**0.5
     M_matrix = np.diag(masses)
     eig, vec = np.linalg.eig(np.dot(M_matrix, np.dot(hessian, M_matrix)))
-    
-    return np.sqrt(eig*alpha2[0])/(2*np.pi), vec
+    norm_modes = -vec.T
+    return np.sqrt(eig*alpha2[0])/(2*np.pi), norm_modes
 
 
 """

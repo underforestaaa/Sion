@@ -57,7 +57,7 @@ with s.with_voltages(dcs = u_set, rfs = None):
 # This ion's particular a, q parameters
 with s.with_voltages(dcs = u_set, rfs = None):
     params = sn.stability(s, M, Omega, Z, dot = x1, plot = 1) 
-
+    
 print("Calculated stability parameters for this ion:\na =", params[0], "q =", params[1])
 print("Trap geometry parameters:\n", "\u03B1 =", params[2][0],"\u03B8 =", params[2][1])
 print("Range of achievable a-parameters in this trap:", params[3])
