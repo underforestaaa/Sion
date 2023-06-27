@@ -1,11 +1,13 @@
 """
 Example, containing simulation of mixed-species ion crystal (consisting of
-4 Ca ions and 1 Sr ion) in a five-wire trap, and calculation of the crystal's normal modes.
+2 Be ions and 1 Ca ion) in a five-wire trap, and calculation of the 
+crystal's normal modes. The configuration is similar to the one in:
+    https://doi.org/10.3929/ethz-b-000420229
 ### IMPORTANT NOTE ###
 Due to some Anaconda environment issues, there will be error, if the
 simulation of MIXED species is run twice, or if the ion species is switched
 between the simulations. This means, that while working with mixed-species 
-crystals, you need to restart kernel after each iteration. 
+crystals, you need to restart kernel after each simulation. 
 """
 
 from __future__ import division
@@ -21,11 +23,11 @@ import sion as sn
 # Global definition of trap parameters.
 # This is the same trap as in fivewiretrap.py example
 L = 1e-6 # length scale
-Vrf = 223. # RF peak voltage in V
-mass1 = 40*ct.atomic_mass # Ca mass
-mass2 = 88*ct.atomic_mass # Sr mass
+Vrf = 245*2 # RF peak voltage in V
+mass1 = 40*ct.atomic_mass # Yb mass
+mass2 = 9*ct.atomic_mass # Ba mass
 Z = 1*ct.elementary_charge # ion charge
-Omega = 2*np.pi*35e6 # RF frequency in rad/s
+Omega = 2*np.pi*100e6 # RF frequency in rad/s
 Urf1 = Vrf * np.sqrt(Z / mass1) / (2 * L * Omega)
 Urf2 = Vrf * np.sqrt(Z / mass2) / (2 * L * Omega)
 
@@ -33,7 +35,7 @@ Urf2 = Vrf * np.sqrt(Z / mass2) / (2 * L * Omega)
 # parameters of trap
 DCtop = [[760, 600],[1000-240, 400],[760, 600] ]  # Array of lengths and widths of Top electrodes
 DCbottom = [[760, 600],[1000-240, 400],[760, 600] ]  # Array of lengths and widths of Bottom electrodes
-cwidth = 140  # Width of central dc electrode
+cwidth = 150  # Width of central dc electrode
 clength = 6000 # length of central dc electrode
 boardwidth = 0  # width of gaps between electrodes
 rftop = 200  # width of top rf electrode, not including width of central electrode
@@ -50,9 +52,9 @@ cmax = 0  # order of the expansion of cover potential. if 0 - coder not consider
 elec, Numb, sist = sn.FiveWireTrap(Urf1, DCtop ,DCbottom, cwidth, clength, boardwidth, rftop, rflength, rfbottom, patternTop, patternBot, getCoordinate, gapped, cheight, cmax)
 
 x0 = np.array(sist.minimum((0., 2, 3), axis=(0, 1, 2), coord=np.identity(3), method="Newton-CG"))
-u_set = 1/5*np.array([0, 15.,   -15. ,   15. ,    8.09, -15.,     8.09,   0.59])
+u_set = 1/1.155*np.array([0, 15.,   -15. ,   15. ,    15, -15.,     15,   1.5 ])
 
-# first find Ca secular frequencies, then Sr freqs.
+# first find Yb secular frequencies, then Sr freqs.
 with sist.with_voltages(dcs=u_set, rfs=None):
     # Check if the minimum was shifted
     x = sist.minimum(x0, axis=(0, 1, 2), coord=np.identity(3), method="Newton-CG")
@@ -65,11 +67,11 @@ with sist.with_voltages(dcs=u_set, rfs=None):
     except:
         print("Secular frequencies not found")
 
-omegas = [omega_sec*1e6 for i in range(4)]
+omegaCa = omega_sec*1e6
         
-elec, Numb, sist = sn.FiveWireTrap(Urf2, DCtop ,DCbottom, cwidth, clength, boardwidth, rftop, rflength, rfbottom, patternTop, patternBot, getCoordinate, gapped, cheight, cmax)
+elec, Numb, sist = sn.FiveWireTrap(Urf2, DCtop ,DCbottom, cwidth, clength, boardwidth, rftop, rflength, rfbottom, patternTop, patternBot, getCoordinate, gapped, cheight, cmax, 1)
 
-# routine to find secular frequencies in minimum point
+# routine to find Ba secular frequencies in minimum point
 with sist.with_voltages(dcs=u_set, rfs=None):
     # Check if the minimum was shifted
     x = sist.minimum(x0, axis=(0, 1, 2), coord=np.identity(3), method="Newton-CG")
@@ -77,14 +79,18 @@ with sist.with_voltages(dcs=u_set, rfs=None):
     try:
         curv_z, mod_dir = sist.modes(x, sorted=False)
         omega_sec = np.sqrt(Z * curv_z / mass2) / (L * 2 * np.pi) * 1e-6
-        print("Sr secular frequencies: (%.4g, %.4g, %.4g) MHz" % (omega_sec[0], omega_sec[1], omega_sec[2]))
+        print("Be secular frequencies: (%.4g, %.4g, %.4g) MHz" % (omega_sec[0], omega_sec[1], omega_sec[2]))
         print("In directions ", mod_dir)
     except:
         print("Secular frequencies not found")
 
+omegas = []
+omegas.append(omega_sec*1e6)
+omegas.append(omegaCa)
 omegas.append(omega_sec*1e6)
 
-ion_number = 5
+
+ion_number = 3
 x0 = x*1e-6
 
 #insert your path to this file here
@@ -94,24 +100,21 @@ s = pl.Simulation(name)
 
 #ions' declaration
 Caions = {'mass': 40, 'charge': 1}
-Srions = {'mass': 88, 'charge': 1}
+Beions = {'mass': 9, 'charge': 1}
 
-#placing 4 Ca ions and 1 Sr ion
-s.append(pl.placeions(Caions, [[x0[0] - 8e-6 , x0[1], x0[2]],[x0[0] - 4e-6 , x0[1], x0[2]], [x0[0], x0[1], x0[2]], [x0[0] + 4e-6 , x0[1], x0[2]]]))
+#placing 4 Yb ions and 1 Ba ion
+s.append(pl.placeions(Caions, [[x0[0], x0[1], x0[2]]]))
 s.append(sn.five_wire_trap(Omega, Vrf, u_set, elec, Numb, [cmax, cheight]))
 
-s.append(pl.placeions(Srions, [[x0[0]+8e-6, x0[1], x0[2]]]))
+s.append(pl.placeions(Beions, [[x0[0]-4e-6, x0[1], x0[2]], [x0[0]+4e-6, x0[1], x0[2]]]))
 #s.append(sn.five_wire_trap(Omega, Vrf, u_set, elec, Numb, [cmax, cheight]))
 
-#temperature initialization
-s.append(pl.thermalvelocities(5, False))
-
 #cooling simulation
-s.append(pl.langevinbath(0, 1e-7))
+s.append(pl.langevinbath(0, 1e-6))
 
 #files with simulation information
 s.append(pl.dump('positions_mixed.txt', variables=['x', 'y', 'z'], steps=10))
-s.append(pl.evolve(1e4))
+s.append(pl.evolve(1e5))
 s.execute()
 
 _, data = pl.readdump('positions_mixed.txt')
@@ -129,10 +132,10 @@ for i in sort:
     ion_positions[k] = np.array([final_x[i], final_y[i], final_z[i]])
     k+=1
 
-#The last ion is Sr
+#The middle ion is Ca
 print('Final positions of ions:\n', ion_positions)
 
-data = data[0:1000, :, :]
+#data = data[0:1000, :, :]
 
 plt.figure()
 for n in range(ion_number):
@@ -145,9 +148,9 @@ plt.show()
 # Plot of the final ion crystal configuration
 plt.figure()
 plt.plot(data[-1, 0, 0], data[-1, 0, 1], 'bo', label = 'Ca ion')
-for i in range(1, ion_number - 1):
-    plt.plot(data[-1, i, 0], data[-1, i, 1], 'bo')
-plt.plot(data[-1, -1, 0], data[-1, 1, 1], 'go', label = 'Sr ion')
+
+plt.plot(data[-1, 1, 0], data[-1, 1, 1], 'go', label = 'Be ion')
+plt.plot(data[-1, 2, 0], data[-1, 2, 1], 'go')
 plt.title('Ion\'s equilibrium positions')
 plt.xlabel('Ion\'s x coordinates')
 plt.ylabel('Ion\'s y coordinates')
@@ -155,9 +158,10 @@ plt.ylim([0, max(1, 2 * np.max(np.abs(data[-1, :, 1])))])
 plt.legend()
 plt.show()
 
-ion_masses = [mass1, mass1, mass1, mass1, mass2]
+ion_masses = np.array([mass2, mass1, mass2])
 
 freqs, modes = sn.normal_modes(ion_positions*L, omegas, ion_masses)
+print(freqs)
 
 #Normal modes are presented in the order of the increase of their frequency
 # which doesn't always coincide with the principle axes of oscillation
@@ -187,7 +191,11 @@ print('Radial freqs y:', radial_freqs_y)
 print('Axial modes:', axial_modes)
 print('Radial modes y:', radial_modes_y)
 
+""" Verification """
 
+teor_ax_freqs = np.array([1.531, 4.101, 4.188])*1e6
+
+print("\nVerification\nDifferences in axial normal frequencies:\n", teor_ax_freqs - np.array(axial_freqs), "Hz")
 
 plt.figure(figsize=(4, 6))
 plt.plot([], [], color='red', label='radial', linewidth=0.5)
@@ -198,6 +206,7 @@ for omega in radial_freqs_y:
 for omega in axial_freqs:
     plt.plot([-1, 0], [omega / omega_sec[1], omega / omega_sec[1]], color='blue', linewidth=0.5)
 
+#Normal frequency spectrum
 plt.ylabel('$\omega/\omega_{\mathrm{com}}^{\mathrm{rad}}$')
 plt.xticks([])
 plt.xlim(-1, 2)
@@ -206,6 +215,16 @@ plt.legend(loc='upper right')
 plt.tight_layout()
 plt.show()
 
+# Axial interaction matrix
+plt.figure()
+plt.imshow(axial_modes[::-1, :] / np.max(np.abs(axial_modes)), cmap='bwr', vmin = -1, vmax = 1)
+plt.colorbar()
+plt.xlabel('ion index')
+plt.ylabel('Y mode index')
+plt.tight_layout()
+plt.show()
+
+#Y interaction matrix
 plt.figure()
 plt.imshow(radial_modes_y[::-1, :] / np.max(np.abs(radial_modes_y)), cmap='bwr', vmin = -1, vmax = 1)
 plt.colorbar()
@@ -213,3 +232,5 @@ plt.xlabel('ion index')
 plt.ylabel('Y mode index')
 plt.tight_layout()
 plt.show()
+
+

@@ -1,0 +1,19 @@
+# This CITATION.cff file was generated with cffinit.
+# Visit https://bit.ly/cffinit to generate yours today!
+
+cff-version: 1.2.0
+title: >-
+  Sion: Python package for simulation and analysis of ion
+  crystals in surface traps
+message: >-
+  If you use this software, please cite it using the
+  metadata from this file.
+type: software
+authors:
+  - given-names: Artem
+    family-names: Podlesnyy
+    email: a.podlesnyy@rqc.ru
+    affiliation: >-
+      Russian Quantum Center, Russia, Skolkovo, Moscow
+      region, 121205
+    orcid: 'https://orcid.org/0009-0006-2633-713X'

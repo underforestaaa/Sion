@@ -3,6 +3,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 from electrode import (System, PolygonPixelElectrode)
 import sys
+import scipy
 
 
 """
@@ -439,6 +440,294 @@ def ringtrap(uid, Omega, r, R, voltage, resolution=100, center=(0, 0), cover=(0,
 
 
 """
+Shuttling of ions in the trap
+"""
+
+def q_tan(t, d, T, N):
+    return d/2*(np.tanh(N*(2*t-T)/T)/np.tanh(N) + 1)
+
+def lossf_shuttle(uset, s, omega0, x, L):
+    """
+    Loss function for search of the optimal voltage sequence
+
+    """
+    u_set = [0 for e in s if e.rf] 
+    u_set.extend(uset)
+    loss = 0
+    attempts = 0
+    with s.with_voltages(dcs = u_set, rfs = None):
+        while attempts < 200:
+            try:
+                xreal = s.minimum(x + np.array([(-1)**attempts*attempts/10, 0, 0]), axis=(0, 1, 2), coord=np.identity(3), method="Newton-CG")
+                break
+            except:
+                attempts += 1
+                xreal = x
+
+        curv_z, mod_dir=s.modes(xreal,sorted=False)
+        loss += np.linalg.norm(xreal - x) + L**(-2)*(curv_z[0]-omega0)**2
+        #+ ((omega - omega0))**2
+    return loss
+
+def linear_shuttling_voltage(s, x0, d, T, N, u_set, vmin = -15, vmax = 15, res = 50, L = 1e-6):
+    """
+    Performs optimization of voltage sequence on DC electrodes for the linear
+    shuttling, according the tanh route. Voltage is optimized to maintain 
+    axial secular frequency along the route.
+
+    Parameters
+    ----------
+    s : electrode.System object
+        Surface trap from electrode package
+    x0 : array shape (3)
+        Starting point of the shuttling
+    d : float
+        distance of the shuttling
+    T : float
+        Time of the shuttling operation
+    N : int
+        parameter in the tanh route definition (see q_tan)
+    u_set : list shape (len(RFs)+len(DCs))
+        list of starting DC voltages (including zeros for RF voltages)
+    vmin : float, optional
+        Minimal allowable DC voltage. The default is -15.
+    vmax : float, optional
+        Maximal allowable DC voltage. The default is 15.
+    res : int, optional
+        Resolution of the voltage sequence determination. The default is 50.
+    L : float, optional
+        Length scale of the electrode. The default is 1e-6 which means mkm
+
+    Returns
+    -------
+    voltage_seq : list shape (len(DCs), res+1)
+        voltage sequences on each DC electrode (could be constant)
+
+    """
+    voltage_seq = []
+    bnds = [(vmin,vmax) for el in s if not el.rf]
+    with s.with_voltages(dcs = u_set, rfs = None):
+        x1 = s.minimum(np.array(x0), axis=(0, 1, 2), coord=np.identity(3), method="Newton-CG")
+        curv_z, mod_dir=s.modes(x1,sorted=False)
+    for dt in range(res+1):
+        t = dt*T/res
+        x = x0 + np.array([q_tan(t, d, T, N), 0, 0])
+        uset = [el for el in u_set if not el == 0]
+        uset = scipy.optimize.minimize(lossf_shuttle, uset, args = (s, curv_z[0], x, L), tol = 1e-6, bounds = bnds, options = {'maxiter' : 100000})
+        voltage_seq.append(uset.x)
+        u_set = uset.x
+    voltage_seq = np.array(voltage_seq).T
+    return voltage_seq
+
+def fitter_tan(t, a, b, c, d):
+    return a*np.tanh(b*t + c) + d
+
+def fitter_norm(t, a, b, c, d):
+    return a*np.exp(b*(t-c)*2) + d
+
+def approx_shuttling(voltage_seq, T, res = 50):
+    """
+    Approximation of voltage sequences on DC electrodes with analytic functions
+
+    Parameters
+    ----------
+    voltage_seq : list shape (len(DCs), res+1)
+        voltage sequences on each DC electrode (could be constant)
+    T : float
+        Time of shuttling operation
+    res : int, optional
+        Resolution of the voltage sequence definition. The default is 50.
+
+    Returns
+    -------
+    funcs : list of strings shape (len(DCs))
+        List of functions, which are applied to the polygon_shuttling simulation
+        Could be :
+            constant - voltage of unchanging DC 
+            a*tanh(b*t+c)+d - tanh curve
+            a*exp(b*(t-c)^2)+d - normal distribution bell
+
+    """
+    x_data = np.arange(res+1)*T/res
+    funcs = []
+    for seq in voltage_seq:
+        mean = np.mean(seq)
+        dif = seq[-1] - seq[0]
+        lin = np.std(seq)/mean
+        att = 0
+        if lin < 1e-4:
+            funcs.append('(%5.3f)' % mean)
+        else:
+            try:
+                popt_tan, pcov_tan = scipy.optimize.curve_fit(fitter_tan, x_data, seq, [np.abs(dif/2), dif/T, -dif/2, mean])
+                tan = np.linalg.norm(seq - fitter_tan(x_data, *popt_tan))
+            except:
+                att += 1
+                tan = 1000
+            try:
+                popt_norm, pcov_norm = scipy.optimize.curve_fit(fitter_norm, x_data, seq)
+                norm = np.linalg.norm(seq - fitter_norm(x_data, *popt_norm))
+            except:
+                att +=1
+                norm = 1000
+            if att == 2:
+                sys.exit("Needs custom curve fitting")
+            
+            if tan > norm:
+                funcs.append('((%5.3f) * exp((%5.3f) * (step*dt - (%5.3f))^2) + (%5.3f))' % tuple(popt_norm))
+            else:
+                funcs.append('((%5.3f) * (1 - 2/(exp(2*((%5.3f) * step*dt + (%5.3f))) + 1)) + (%5.3f))' % tuple(popt_tan))
+
+    return funcs
+
+@lammps.fix
+def polygon_shuttling(uid, Omega, rf_set, RFs, DCs, shuttlers, cover=(0, 0)):
+    """
+    Simulates an arbitrary planar trap with polygonal electrodes
+    and shuttling in this trap. The shuttling is specified by the 
+    voltage sequence on the DC electrodes. 
+
+    :param uid: str
+        ions ID
+    :param Omega: list shape len(RFs)
+        array of RF frequencies of each RF electrode
+    :param rf_set: array shape (len(RFs))
+        Set of the (peak) voltages on RF electrodes.
+    :param RFs: list shape (len(RFs), 4)
+        Array of coordinates of RF electrodes in m
+    :param DCs: list shape (len(DCs), 4)
+        Array of coordinates of DC electrodes in m
+    :param shuttlers: list of strings shape (len(shuttlers))
+        list of strings, representing functions at which voltage on DC electrodes
+        is applied through simulation time
+    :param cover: list shape (2)
+        array [cover_number, cover_height] - number of the terms in
+        cover electrode influence expansion and its height.
+
+    :return: str
+        updates simulation lines, which will be executed by LAMMPS
+    """
+    odict = {}
+    Omega = np.array(Omega)
+    lines = [
+        f'\n# Creating a polygonal Surface Electrode Trap... (fixID={uid})']
+    odict['timestep'] = 1 / np.max(Omega) / 20
+    rf = [len(a) for a in RFs]
+    nrf = len(rf)
+    dc = [len(a) for a in DCs]
+    for i in range(nrf):
+        lines.append(
+            f'variable phase{uid}{i:d}\t\tequal "{Omega[i]:e}*step*dt"')
+    xc = []
+    yc = []
+    zc = []
+
+    for iterr in range(nrf):
+        polygon = np.array(RFs[iterr])
+        no = np.array(polygon).shape[0]
+
+        for m in range(2*cover[0]+1):
+            xt = f'(x - ({polygon[no-1, 0]:e}))'
+            numt = no-1
+            yt = f'(y - ({polygon[no-1, 1]:e}))'
+            cov = 2*(m - cover[0])*cover[1]
+            z = f'(z + ({cov:e}))'
+
+            for k in range(no):
+                xo = xt
+                yo = yt
+                numo = numt
+                numt = k
+                dx = polygon[numt, 0] - polygon[numo, 0]
+                dy = polygon[numo, 1] - polygon[numt, 1]
+                c = polygon[numt, 0] * polygon[numo, 1] - polygon[numo, 0] * polygon[numt, 1]
+                lt = (polygon[numt, 0] - polygon[numo, 0]) ** 2 + (polygon[numt, 1] - polygon[numo, 1]) ** 2
+
+                lines.append(
+                    f'variable ro{uid}{iterr:d}{k:d}{m:d} atom "sqrt({xo}^2+{yo}^2+{z}^2)"\n')
+                xt = f'(x - ({polygon[k, 0]:e}))'
+
+                yt = f'(y - ({polygon[k, 1]:e}))'
+                lines.append(
+                    f'variable rt{uid}{iterr:d}{k:d}{m:d} atom "sqrt({xt}^2+{yt}^2+{z}^2)"\n')
+                lines.append(
+                    f'variable n{uid}{iterr:d}{k:d}{m:d} atom "({rf_set[iterr]:e})*(v_ro{uid}{iterr:d}{k:d}{m:d}+v_rt{uid}{iterr:d}{k:d}{m:d})/(v_ro{uid}{iterr:d}{k:d}{m:d}*v_rt{uid}{iterr:d}{k:d}{m:d}*((v_ro{uid}{iterr:d}{k:d}{m:d}+v_rt{uid}{iterr:d}{k:d}{m:d})*(v_ro{uid}{iterr:d}{k:d}{m:d}+v_rt{uid}{iterr:d}{k:d}{m:d})-({lt:e}))*{np.pi:e})"\n')
+
+                if dx == 0:
+                    yc.append(f'0')
+                else:
+                    yc.append(
+                        f'({dx:e})*{z}*v_n{uid}{iterr:d}{k:d}{m:d}*cos(v_phase{uid}{iterr:d})')
+                if dy == 0:
+                    xc.append(f'0')
+                else:
+                    xc.append(
+                        f'({dy:e})*{z}*v_n{uid}{iterr:d}{k:d}{m:d}*cos(v_phase{uid}{iterr:d})')
+                zc.append(
+                    f'({c:e} - ({dx:e})*y - ({dy:e})*x)*v_n{uid}{iterr:d}{k:d}{m:d}*cos(v_phase{uid}{iterr:d})')
+    xc = ' + '.join(xc)
+    yc = ' + '.join(yc)
+    zc = ' + '.join(zc)
+
+    xr = []
+    yr = []
+    zr = []
+    for ite, elem in enumerate(DCs):
+        polygon = np.array(elem)
+        no = np.array(polygon).shape[0]
+
+        for m in range(2 * cover[0] + 1):
+            x2 = f'(x - ({polygon[no-1, 0]:e}))'
+            y2 = f'(y - ({polygon[no-1, 1]:e}))'
+            numt = no - 1
+            cov = 2 * (m - cover[0]) * cover[1]
+            z = f'(z + ({cov:e}))'
+
+            for k in range(no):
+                x1 = x2
+                y1 = y2
+                numo = numt
+                numt = k
+                lines.append(
+                    f'variable rodc{uid}{ite:d}{k:d}{m:d} atom "sqrt({x2}^2+{y2}^2+{z}^2)"\n')
+                x2 = f'(x - ({polygon[k, 0]:e}))'
+                y2 = f'(y - ({polygon[k, 1]:e}))'
+                lines.append(
+                    f'variable rtdc{uid}{ite:d}{k:d}{m:d} atom "sqrt({x2}^2+{y2}^2+{z}^2)"\n')
+                dx = polygon[numt, 0] - polygon[numo, 0]
+                dy = polygon[numo, 1] - polygon[numt, 1]
+                c = polygon[numt, 0] * polygon[numo, 1] - polygon[numo, 0] * polygon[numt, 1]
+                lt = (polygon[numt, 0] - polygon[numo, 0]) ** 2 + (polygon[numt, 1] - polygon[numo, 1]) ** 2
+                lines.append(
+                    f'variable ndc{uid}{ite:d}{k:d}{m:d} atom "(-1)*{shuttlers[ite]}*(v_rodc{uid}{ite:d}{k:d}{m:d}+v_rtdc{uid}{ite:d}{k:d}{m:d})/(v_rodc{uid}{ite:d}{k:d}{m:d}*v_rtdc{uid}{ite:d}{k:d}{m:d}*((v_rodc{uid}{ite:d}{k:d}{m:d}+v_rtdc{uid}{ite:d}{k:d}{m:d})*(v_rodc{uid}{ite:d}{k:d}{m:d}+v_rtdc{uid}{ite:d}{k:d}{m:d})-({lt:e}))*{np.pi:e})"\n')
+
+                if dy == 0:
+                    xr.append(f'0')
+                else:
+                    xr.append(f'({dy:e})*{z}*v_ndc{uid}{ite:d}{k:d}{m:d}')
+                if dx == 0:
+                    yr.append(f'0')
+                else:
+                    yr.append(f'({dx:e})*{z}*v_ndc{uid}{ite:d}{k:d}{m:d}')
+                zr.append(
+                    f'({c:e} - ({dx:e})*y - ({dy:e})*x)*v_ndc{uid}{ite:d}{k:d}{m:d}')
+    xr = ' + '.join(xr)
+    yr = ' + '.join(yr)
+    zr = ' + '.join(zr)
+
+    lines.append(f'variable oscEX{uid} atom "{xc}+{xr}"')
+    lines.append(f'variable oscEY{uid} atom "{yc}+{yr}"')
+    lines.append(f'variable oscEZ{uid} atom "{zc}+{zr}"')
+    lines.append(
+        f'fix {uid} all efield v_oscEX{uid} v_oscEY{uid} v_oscEZ{uid}\n')
+
+    odict.update({'code': lines})
+
+    return odict
+
+
+
+"""
 Definition of particularly useful planar traps
 """
 
@@ -733,7 +1022,7 @@ def FiveWireTrap(Urf, DCtop, DCbottom, cwidth, clength, boardwidth, rftop, rflen
 
     # creates a plot of electrode
     if plott is not None:
-        fig, ax = plt.subplots(1, 2, figsize=(20, 20))
+        fig, ax = plt.subplots(1, 2, figsize=(60, 60))
         s.plot(ax[0])
         s.plot_voltages(ax[1], u=s.rfs)
         # u = s.rfs sets the voltage-type for the voltage plot to RF-voltages (DC are not shown)
@@ -1056,7 +1345,7 @@ def individual_wells(Urf, width, length, dot, x, y, L = 1e-6):
     for i in range(n-1):
         rfs.append([[dot[i, 0]-x[i]/2, dot[i, 1]+y[i]/2], [dot[i, 0]+x[i]/2, dot[i, 1]+y[i]/2], [dot[i, 0]+x[i]/2, width/2], [dot[i, 0]-x[i]/2, width/2]])
         rfs.append([[dot[i, 0]-x[i]/2, -width/2],[dot[i, 0]+x[i]/2, -width/2], [dot[i, 0]+x[i]/2, dot[i, 1]-y[i]/2], [dot[i, 0]-x[i]/2, dot[i, 1]-y[i]/2]])
-        rfs.append([[dot[i,0]+x[i]/2, -width/2], [dot[i+1,0]-x[i]/2, -width/2], [dot[i+1,0]-x[i]/2, width/2],[dot[i,0]+x[i]/2, width/2]])
+        rfs.append([[dot[i,0]+x[i]/2, -width/2], [dot[i+1,0]-x[i+1]/2, -width/2], [dot[i+1,0]-x[i+1]/2, width/2],[dot[i,0]+x[i]/2, width/2]])
     
     i = n-1
       
@@ -1722,16 +2011,16 @@ def v_lossf(uset, numbers, s, dots, axis, omegas, Z, M, L = 1e-6):
     u_set = np.append(u_set, uset)
     
     #obtain result of the function
-    try: 
-        with s.with_voltages(dcs = u_set, rfs = None):
-            for i, pos in enumerate(dots):
+    with s.with_voltages(dcs = u_set, rfs = None):
+        for i, pos in enumerate(dots):
+            try:
                 x1 = s.minimum(pos, axis=(0, 1, 2), coord=np.identity(3), method="Newton-CG")
                 curv, mod_dir=s.modes(x1,sorted=False) 
                 for j, axs in enumerate(axis):
                     omega = (np.sqrt(Z*curv[axs]/M)/(L*2*np.pi) * 1e-6)/omegas[j][0]
                     loss += (omega - omegas[j][i]/omegas[j][0])**2
-    except: 
-        sys.exit("The ion in %s positions is lost." %i)
+            except: 
+                sys.exit("The ion in %s positions is lost." %i)
             
     return loss
 
@@ -1910,16 +2199,16 @@ def g_lossf(geom, n_dots, dots, positions, Urf, width, length, axis, omegas, Z, 
     y = geom[n_dots:2*n_dots]
     
     #obtain result of the function
-    try: 
-        s, coordinates = individual_wells(Urf, width, length, dots, x, y, L)
-        for i, pos in enumerate(positions):
+    s, coordinates = individual_wells(Urf, width, length, dots, x, y, L)
+    for i, pos in enumerate(positions):
+        try:
             x1 = s.minimum(pos, axis=(0, 1, 2), coord=np.identity(3), method="Newton-CG")
             curv, mod_dir=s.modes(x1,sorted=False) 
             for j, axs in enumerate(axis):
                 omega = (np.sqrt(Z*curv[axs]/M)/(L*2*np.pi) * 1e-6)/omegas[j][0]
                 loss += (omega - omegas[j][i]/omegas[j][0])**2
-    except: 
-        sys.exit("The ion in %s positions is lost." %i)
+        except: 
+            sys.exit("The ion in %s positions is lost." %i)
             
     return loss
 

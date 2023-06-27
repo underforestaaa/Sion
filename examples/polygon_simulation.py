@@ -1,7 +1,7 @@
 """
 This file considers essentially the same configuration, as in FiveWireSimulation file,
 but using polygon_trap() function for simulation and normal_modes() function 
-for normal mode calculation.
+for normal mode calculation. We expect the similar results as in FiveWireSimulation.py
 """
 
 from __future__ import division
@@ -12,6 +12,8 @@ from electrode import (System, PolygonPixelElectrode, euler_matrix,
                        PointPixelElectrode, PotentialObjective,
                        PatternRangeConstraint, shaped)
 import sion as sn
+
+np.set_printoptions(2)
 
 # Global definition of trap parameters.
 L = 1e-6 # length scale
@@ -48,9 +50,6 @@ for iterr in range(2):
 DC_electrodes = []
 for ite in range(Numb):
     DC_electrodes.append(elec[ite + 1][1][0])
-print(RF_electrodes)
-print(DC_electrodes)
-
 
 x0 = s.minimum((0., 100, 120), axis=(0, 1, 2))
 
@@ -67,20 +66,16 @@ u_set = np.array([0, 7.804913028626215, -5.623874144063542, 7.804913028626215, 7
 with s.with_voltages(dcs=u_set, rfs=None):
     # Check if the minimum was shifted
     x = s.minimum((0., 90, 120), axis=(0, 1, 2), coord=np.identity(3), method="Newton-CG")
-    x_shift = x - x0
-    print('The minimum was shifted by: (%.3g, %.3g, %.3g)' % (x_shift[0], x_shift[1], x_shift[2]))
+    print('The minimum: (%.3g, %.3g, %.3g) mkm' % (x[0], x[1], x[2]))
 
     # Get trap frequencies
     try:
         curv_z, mod_dir = s.modes(x, sorted=False)
         omega_sec = np.sqrt(Z * curv_z / mass) / (L * 2 * np.pi) * 1e-6
-        print("secular frequencies: (%.4g, %.4g, %.4g) MHz" % (omega_sec[0], omega_sec[1], omega_sec[2]))
-        print("in directions ", mod_dir)
+        print("Secular frequencies: (%.4g, %.4g, %.4g) MHz" % (omega_sec[0], omega_sec[1], omega_sec[2]))
+        print("In directions ", mod_dir)
     except:
         print("secular frequencies not found")
-    for line in s.analyze_static(x, axis=(0, 1, 2,), m=mass, q=Z, l=L, o=Omega):
-        print(line)
-
 
 omega_sec *=1e6
 
@@ -89,7 +84,7 @@ ion_number = 5
 x0 = x*1e-6
 
 #insert your path to this file here
-name = Path("/Users/a.podlesnyy/Desktop/RQC/Surface Traps/polygon_simulation.py").stem
+name = Path(__file__).stem
 
 sim = pl.Simulation(name)
 
@@ -105,9 +100,6 @@ uset = [Vrf]
 uset.extend(u_set)
 uset[1] = Vrf
 uset = np.array(uset)
-
-print(uset)
-
 
 #polygon trap initialization
 sim.append(sn.polygon_trap([Omega,Omega], uset, RF_electrodes, DC_electrodes))
@@ -157,10 +149,6 @@ plt.show()
 
 '''Phonon modes of the ion crystal'''
 
-
-
-
-
 # Declarations of ion masses and modes for normal modes
 ion_masses = [mass for el in range(5)]
 omegas = [omega_sec for el in range(5)]
@@ -168,7 +156,6 @@ M_matrix = np.diag(list(ion_masses)*3)
 
 #obtaining normal modes, for general case
 freqs, modes = sn.normal_modes(ion_positions, omegas, ion_masses)
-print(freqs)
 axial_freqs = freqs[0:5]
 radial_freqs = freqs[5:10]
 axial_modes = np.zeros([5,5])

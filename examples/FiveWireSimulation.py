@@ -39,9 +39,9 @@ getCoordinate = None  # If not None, writes a file with coordinates of vertexes 
 gapped = 0  # gaps between central DC electrode and RF lines
 cheight = 1000  # height of the grounded cover electrode plane
 cmax = 0  # order of the expansion of cover potential. if 0 - coder not considered, if 5 - considered with optimal precision
+plot = 1
 
-
-elec, Numb, sist = sn.FiveWireTrap(Urf, DCtop ,DCbottom, cwidth, clength, boardwidth, rftop, rflength, rfbottom, patternTop, patternBot, getCoordinate, gapped, cheight, cmax)
+elec, Numb, sist = sn.FiveWireTrap(Urf, DCtop ,DCbottom, cwidth, clength, boardwidth, rftop, rflength, rfbottom, patternTop, patternBot, getCoordinate, gapped, cheight, cmax, plot)
 
 x0 = L*np.array(sist.minimum((0., 2, 3), axis=(0, 1, 2), coord=np.identity(3), method="Newton-CG"))
 u_set = np.array([0, 7.804913028626215, -5.623874144063542, 7.804913028626215, 7.804913030569389, -7.804913072245546, 7.80491303056939, -0.8386007732343675])
@@ -50,25 +50,23 @@ u_set = np.array([0, 7.804913028626215, -5.623874144063542, 7.804913028626215, 7
 with sist.with_voltages(dcs=u_set, rfs=None):
     # Check if the minimum was shifted
     x = sist.minimum((0., 90, 120), axis=(0, 1, 2), coord=np.identity(3), method="Newton-CG")
-    x_shift = x - x0
-    print('The minimum was shifted by: (%.3g, %.3g, %.3g)' % (x_shift[0], x_shift[1], x_shift[2]))
+    print('Potential minimum: (%.3g, %.3g, %.3g) mkm' % (x[0], x[1], x[2]))
 
     # Get trap frequencies
     try:
         curv_z, mod_dir = sist.modes(x, sorted=False)
         omega_sec = np.sqrt(Z * curv_z / mass) / (L * 2 * np.pi) * 1e-6
-        print("secular frequencies: (%.4g, %.4g, %.4g) MHz" % (omega_sec[0], omega_sec[1], omega_sec[2]))
-        print("in directions ", mod_dir)
+        print("Secular frequencies: (%.4g, %.4g, %.4g) MHz" % (omega_sec[0], omega_sec[1], omega_sec[2]))
+        print("In directions ", mod_dir)
     except:
         print("secular frequencies not found")
-    for line in sist.analyze_static(x, axis=(0, 1, 2,), m=mass, q=Z, l=L, o=Omega):
-        print(line)
-
 
 omega_sec *=1e6
 
 ion_number = 5
 x0 = x*1e-6
+
+"""Simulation"""
 
 #insert your path to this file here
 name = Path(__file__).stem
@@ -112,8 +110,8 @@ for i in sort:
     ion_positions[k] = np.array([final_x[i], final_y[i], final_z[i]])
     k+=1
 
-
-print('Final positions of ions:\n', ion_positions)
+np.set_printoptions(2)
+print('Final positions of ions in mkm:\n', ion_positions)
 
 
 plt.figure()
@@ -133,12 +131,18 @@ plt.ylabel('Ion\'s y coordinates')
 plt.ylim([0, max(1, 2 * np.max(np.abs(data[-1, :, 1])))])
 plt.show()
 
+"""Normal modes"""
+
 axial_freqs, axial_modes = sn.linear_axial_modes(ion_positions*1e-6, omega_sec[0], Z, mass)
 radial_freqs, radial_modes = sn.linear_radial_modes(ion_positions*1e-6, omega_sec[1], Z, mass)
+
+
+np.set_printoptions(0)
 
 print('Axial freqs:', axial_freqs)
 print('Radial freqs y:', radial_freqs)
 
+np.set_printoptions(2)
 print('Axial modes', axial_modes)
 
 theor_modes = np.array([[0.4472,0.4472,0.4472,0.4472,0.4472],[-0.6395,-0.3017, 0, 0.3017, 0.6395],
