@@ -8,7 +8,7 @@ To use *Sion*, the following packages are required to be installed:
 - [pylion package](https://bitbucket.org/dtrypogeorgos/pylion/src/master/): LAMMPS wrapper for ion dynamics simulation.
 - [electrode package](https://github.com/nist-ionstorage/electrode): Python package for convenient definition and analysis of surface electrode traps.
 
-The package is installed by running <code>python setup.py install</code> in console in the same directory with the setup.py file, which must be downloaded. Also it may be installed from PyPI (tba).
+The package is installed by running <code>python setup.py install</code> in console in the same directory with the setup.py file, which must be downloaded.
 
 
 ## Getting started
