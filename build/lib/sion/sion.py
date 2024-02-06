@@ -178,9 +178,15 @@ def polygon_trap(uid, Omega, rf_voltages, dc_voltages, RFs, DCs, cover=(0, 0)):
                         zr.append(f'({c:e} - ({dx:e})*y)*{n}')
                     else:
                         zr.append(f'({c:e} - ({dx:e})*y - ({dy:e})*x)*{n}')
+
     xr = ' + '.join(xr)
     yr = ' + '.join(yr)
     zr = ' + '.join(zr)
+    
+    if len(xr) == 0:
+        xr = '0'
+        yr = '0'
+        zr = '0'
 
     lines.append(f'variable oscEX{uid} atom "{xcc}+{xr}"')
     lines.append(f'variable oscEY{uid} atom "{ycc}+{yr}"')
@@ -1141,7 +1147,7 @@ def point_trap_design(frequencies, rf_voltages, dc_voltages, boundaries, scale, 
 
 
 def n_rf_trap_design(Urf, DCtop, DCbottom, cwidth, rfwidth, rflength, n_rf=1, L = 1e-6, patternTop=1,
-              patternBot=1, cheight=0, cmax=0, need_plot = False):
+              patternBot=1, cheight=0, cmax=0, need_coordinates = False, need_plot = False):
     """
     A function for convenient definition of multi-wire traps, with n asymmetrical RF lines.
 
@@ -1331,20 +1337,53 @@ def n_rf_trap_design(Urf, DCtop, DCbottom, cwidth, rfwidth, rflength, n_rf=1, L 
             axi.set_aspect("equal")
             axi.set_xlim(-xmax, xmax)
             axi.set_ylim(-ymaxn, ymaxp)
+            
+    if need_coordinates:
+        return s, RF, DC
+    else:
+        return s
 
-    return s, RF, DC
-
-def polygon_from_gds(gds_lib):
+def polygons_from_gds(gds_lib, L = 1e-6, need_plot = False, need_coordinates = False, cheight=0, cmax=0):
     try:
         import gdspy
-
-        lib = gdspy.GdsLibrary(infile=gds_lib)
-        for cell in lib.top_level():
-            for coordinates in cell.get_polygons():
-                # numpy array with dimension (N, 2) with all coordinates
-                print("Coordinates:", coordinates)
     except:
-        print("Error: gdspy not installed")
+        sys.exit("gdspy is not installed.")
+    lib = gdspy.GdsLibrary(infile=gds_lib)
+    count = 0
+    full_elec = []
+    electrodes = []
+
+    for cell in lib.top_level():
+        for coordinates in cell.get_polygons():
+            electrodes.append([f'[{count}]', [coordinates]])
+            count+=1
+            full_elec.append(np.array(coordinates)*L)
+    s = System([PolygonPixelElectrode(cover_height=cheight, cover_nmax=cmax, name=n, paths=map(np.array, p))
+                for n, p in electrodes]) 
+    
+    # creates a plot of electrode
+    if need_plot:
+        fig, ax = plt.subplots(1, 1, figsize = [30, 30])
+        s.plot(ax)
+        ax.set_title("electrode layout")
+        ymaxes = []
+        ymines = []
+        xmaxes = []
+        xmines = []
+        for elec in full_elec:
+            ymaxes.append(np.max(elec[:,1]/L))
+            ymines.append(np.min(elec[:,1]/L))
+            xmaxes.append(np.max(elec[:,0]/L))
+            xmines.append(np.min(elec[:,0]/L))
+        ax.set_xlim(np.min([1.2*np.min(xmines), 0.8*np.min(xmines)]), np.max([1.2*np.max(xmaxes), 0.8*np.max(xmaxes)]))
+        ax.set_ylim(np.min([1.2*np.min(ymines), 0.8*np.min(ymines)]), np.max([1.2*np.max(ymaxes), 0.8*np.max(ymaxes)]))
+            
+    if need_coordinates:
+        return s, full_elec
+    else:
+        return s
+
+    
 
 def individual_wells(Urf, width, length, dot, x, y, L = 1e-6):
     """
