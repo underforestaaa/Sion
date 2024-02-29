@@ -366,36 +366,10 @@ def ringtrap(uid, Omega, r, R, r_dc, RF_voltage, dc_voltage, resolution=100, cov
 Shuttling of ions in the trap
 """
 
-def q_tan(t, d, T, N):
-    return d/2*(np.tanh(N*(2*t-T)/T)/np.tanh(N) + 1)
-
-def lossf_shuttle(uset, s, omega0, x, L):
-    """
-    Loss function for search of the optimal voltage sequence
-
-    """
-    u_set = [0 for e in s if e.rf] 
-    u_set.extend(uset)
-    loss = 0
-    attempts = 0
-    with s.with_voltages(dcs = u_set, rfs = None):
-        while attempts < 200:
-            try:
-                xreal = s.minimum(x + np.array([(-1)**attempts*attempts/10, 0, 0]), axis=(0, 1, 2), coord=np.identity(3), method="Newton-CG")
-                break
-            except:
-                attempts += 1
-                xreal = x
-
-        curv_z, mod_dir=s.modes(xreal,sorted=False)
-        loss += np.linalg.norm(xreal - x) + L**(-2)*(curv_z[0]-omega0)**2
-        #+ ((omega - omega0))**2
-    return loss
-
-def linear_shuttling_voltage(s, x0, d, T, N, u_set, vmin = -15, vmax = 15, res = 50, L = 1e-6):
+def linear_shuttling_voltage(s, x0, d, T, dc_set, shuttlers = 0, N = 4, vmin = -15, vmax = 15, res = 25, L = 1e-6, need_func = False):
     """
     Performs optimization of voltage sequence on DC electrodes for the linear
-    shuttling, according the tanh route. Voltage is optimized to maintain 
+    shuttling, according to the tanh route. Voltage is optimized to maintain 
     axial secular frequency along the route.
 
     Parameters
@@ -419,7 +393,7 @@ def linear_shuttling_voltage(s, x0, d, T, N, u_set, vmin = -15, vmax = 15, res =
     res : int, optional
         Resolution of the voltage sequence determination. The default is 50.
     L : float, optional
-        Length scale of the electrode. The default is 1e-6 which means mkm
+        Length scale of the electrode. The default is 1e-6 which means um
 
     Returns
     -------
@@ -427,28 +401,18 @@ def linear_shuttling_voltage(s, x0, d, T, N, u_set, vmin = -15, vmax = 15, res =
         voltage sequences on each DC electrode (could be constant)
 
     """
-    voltage_seq = []
-    bnds = [(vmin,vmax) for el in s if not el.rf]
-    with s.with_voltages(dcs = u_set, rfs = None):
-        x1 = s.minimum(np.array(x0), axis=(0, 1, 2), coord=np.identity(3), method="Newton-CG")
-        curv_z, mod_dir=s.modes(x1,sorted=False)
-    for dt in range(res+1):
-        t = dt*T/res
-        x = x0 + np.array([q_tan(t, d, T, N), 0, 0])
-        uset = [el for el in u_set if not el == 0]
-        uset = scipy.optimize.minimize(lossf_shuttle, uset, args = (s, curv_z[0], x, L), tol = 1e-6, bounds = bnds, options = {'maxiter' : 100000})
-        voltage_seq.append(uset.x)
-        u_set = uset.x
-    voltage_seq = np.array(voltage_seq).T
-    return voltage_seq
-
+    def q_tan(t):
+        return np.array([d/2*(np.tanh(N*(2*t-T)/T)/np.tanh(N) + 1), 0, 0])    
+    
+    return shuttling_voltage(s, x0, q_tan, T, dc_set, shuttlers, vmin, vmax, res, L, need_func, a = 1)
+    
 def fitter_tan(t, a, b, c, d):
-    return a*np.tanh(b*t + c) + d
+    return a*np.tanh(b*(t + c)) + d
 
 def fitter_norm(t, a, b, c, d):
-    return a*np.exp(b*(t-c)*2) + d
+    return a*np.exp(b*(t-c)**2) + d
 
-def approx_shuttling(voltage_seq, T, res = 50):
+def approx_linear_shuttling(voltage_seq, T, dc_set, shuttlers, res):
     """
     Approximation of voltage sequences on DC electrodes with analytic functions
 
@@ -473,35 +437,122 @@ def approx_shuttling(voltage_seq, T, res = 50):
     """
     x_data = np.arange(res+1)*T/res
     funcs = []
-    for seq in voltage_seq:
+    
+    for i, seq in enumerate(voltage_seq):
         mean = np.mean(seq)
         dif = seq[-1] - seq[0]
-        lin = np.std(seq)/mean
+        ampl = np.max(seq)-np.min(seq)
+        lin = np.std(seq)/np.max([mean, np.mean(np.abs(seq)), 1e-6])
         att = 0
         if lin < 1e-4:
             funcs.append('(%5.3f)' % mean)
         else:
             try:
-                popt_tan, pcov_tan = scipy.optimize.curve_fit(fitter_tan, x_data, seq, [np.abs(dif/2), dif/T, -dif/2, mean])
+                popt_tan, pcov_tan = scipy.optimize.curve_fit(fitter_tan, x_data, seq, [np.abs(dif/2), dif/T, -T/2, mean])
                 tan = np.linalg.norm(seq - fitter_tan(x_data, *popt_tan))
             except:
                 att += 1
-                tan = 1000
+                tan = 1e6
             try:
-                popt_norm, pcov_norm = scipy.optimize.curve_fit(fitter_norm, x_data, seq)
+                popt_norm, pcov_norm = scipy.optimize.curve_fit(fitter_norm, x_data, seq, [np.abs(ampl), -1/2/T, T/2, np.min(seq)])
                 norm = np.linalg.norm(seq - fitter_norm(x_data, *popt_norm))
             except:
                 att +=1
-                norm = 1000
+                norm = 1e6
             if att == 2:
-                sys.exit("Needs custom curve fitting")
+                sys.exit(f"Failed to fit {i}th electrode. Needs custom curve fitting")
             
             if tan > norm:
-                funcs.append('((%5.3f) * exp((%5.3f) * (step*dt - (%5.3f))^2) + (%5.3f))' % tuple(popt_norm))
+                funcs.append('((%5.6f) * exp((%5.6f) * (step*dt - (%5.6f))^2) + (%5.6f))' % tuple(popt_norm))
             else:
-                funcs.append('((%5.3f) * (1 - 2/(exp(2*((%5.3f) * step*dt + (%5.3f))) + 1)) + (%5.3f))' % tuple(popt_tan))
-
+                funcs.append('((%5.6f) * (1 - 2/(exp(2*((%5.6f) * (step*dt + (%5.6f)))) + 1)) + (%5.6f))' % tuple(popt_tan))
+                
     return funcs
+
+def lossf_shuttle(uset, s, omegas, dots, L, dc_set, shuttlers, a):
+    """
+    Loss function for search of the optimal voltage sequence
+
+    """
+    rfss = np.array([0 for el in s if el.rf])
+    for c, elec in enumerate(shuttlers):
+        dc_set[elec] = uset[c]
+    u_set = np.concatenate([rfss, np.array(dc_set)])
+    loss = 0
+    attempts = 0
+    with s.with_voltages(dcs = u_set, rfs = None):
+        for i,x in enumerate(dots):
+            while attempts < 200:
+                try:
+                    try:
+                        xreal = s.minimum(x + 1e-6/L*np.array([(-1)**attempts*attempts/10, 0, 1e-6]), axis=(0, 1, 2), coord=np.identity(3), method="Newton-CG")
+                        break
+                    except:
+                        try:
+                            xreal = s.minimum(x + 1e-6/L*np.array([1e-6, (-1)**attempts*attempts/10, 1e-6]), axis=(0, 1, 2), coord=np.identity(3), method="Newton-CG")
+                            break
+                        except:
+                            xreal = s.minimum(x + 1e-6/L*np.array([1e-6, 1e-6, (-1)**attempts*attempts/10]), axis=(0, 1, 2), coord=np.identity(3), method="Newton-CG")
+                            break
+                except:
+                    attempts += 1
+                    xreal = x 
+
+            curv_z, mod_dir=s.modes(xreal,sorted=False)
+            loss += np.linalg.norm(xreal - x) + a*L**(-2)*(curv_z[0]-omegas[i])**2
+    return loss
+
+
+def shuttling_voltage(s, starts, routes, T, dc_set, shuttlers = 0, vmin = -15, vmax = 15, res = 50, L = 1e-6, need_func = False, a = 0):
+
+    voltage_seq = []
+    if shuttlers == 0:
+        shuttlers = range(len(dc_set))
+    try:
+        trash = starts[0,0]
+    except:
+        starts = np.array([starts])
+    bnds = [(vmin,vmax) for el in shuttlers]
+    rfss = np.array([0 for el in s if el.rf])
+    u_set = np.concatenate([rfss, np.array(dc_set)])
+    wells = len(starts)
+    curves = np.zeros(wells)
+    for i,start in enumerate(starts):
+        with s.with_voltages(dcs = u_set, rfs = None):
+            x1 = s.minimum(np.array(start), axis=(0, 1, 2), coord=np.identity(3), method="Newton-CG")
+            curv_z, mod_dir=s.modes(x1,sorted=False)
+            curves[i] = (curv_z[0])
+    uset = np.zeros(len(shuttlers))
+    for c, elec in enumerate(shuttlers):
+        uset[c] = dc_set[elec]
+    x = np.zeros((wells, 3))
+    for dt in range(res+1):
+        t = dt*T/res
+        for i,x0 in enumerate(starts):
+            try:
+                x[i] = x0 + routes(i,t)
+            except:
+                x[i] = x0 + routes(t)
+        newset = scipy.optimize.minimize(lossf_shuttle, uset, args = (s, curves, x, L, dc_set, shuttlers, a), tol = 1e-9, bounds = bnds, options = {'maxiter' : 1000000})
+        uset = newset.x
+        voltage_seq.append(uset) 
+        
+    voltage_seq = np.array(voltage_seq).T
+    volt_seq = []
+    k = 0
+    for i, v in enumerate(dc_set):
+        if i in shuttlers:
+            volt_seq.append(voltage_seq[k])
+            k += 1
+        else:
+            volt_seq.append(np.array([v]*(res+1)))
+    volt_seq = np.array(volt_seq)
+    
+    if need_func:
+        funcs = approx_linear_shuttling(volt_seq, T, dc_set, shuttlers, res)
+        return volt_seq, funcs
+    else:
+        return volt_seq
 
 @lammps.fix
 def polygon_shuttling(uid, Omega, rf_set, RFs, DCs, shuttlers, cover=(0, 0)):
@@ -1129,15 +1180,17 @@ def point_trap_design(frequencies, rf_voltages, dc_voltages, boundaries, scale, 
         ax[1].set_title('dc voltage')
         ax[1].set_xlim((-scale, scale))
         ax[1].set_ylim((-scale, scale))
-        cmap = plt.cm.RdBu_r
-        norm = mpl.colors.Normalize(vmin=np.min(dc_voltages), vmax=np.max(dc_voltages))
+        try:
+            cmap = plt.cm.RdBu_r
+            norm = mpl.colors.Normalize(vmin=np.min(dc_voltages), vmax=np.max(dc_voltages))
 
-        cb = fig.colorbar(plt.cm.ScalarMappable(norm=norm, cmap=cmap),ax=ax, shrink =0.9)
+            cb = fig.colorbar(plt.cm.ScalarMappable(norm=norm, cmap=cmap),ax=ax, shrink =0.9)
 
-        """cb = plt.colorbar(ax=ax[2], shrink=0.9)"""
-        cb.ax.tick_params(labelsize=8)
-        cb.set_label('Voltage', fontsize = 8)
-
+            """cb = plt.colorbar(ax=ax[2], shrink=0.9)"""
+            cb.ax.tick_params(labelsize=8)
+            cb.set_label('Voltage', fontsize = 8)
+        except:
+            pass
         plt.show()
 
     if need_coordinates:
@@ -1343,7 +1396,7 @@ def n_rf_trap_design(Urf, DCtop, DCbottom, cwidth, rfwidth, rflength, n_rf=1, L 
     else:
         return s
 
-def polygons_from_gds(gds_lib, L = 1e-6, need_plot = False, need_coordinates = False, cheight=0, cmax=0):
+def polygons_from_gds(gds_lib, L = 1e-6, need_plot = True, need_coordinates = True, cheight=0, cmax=0):
     try:
         import gdspy
     except:
@@ -1355,9 +1408,43 @@ def polygons_from_gds(gds_lib, L = 1e-6, need_plot = False, need_coordinates = F
 
     for cell in lib.top_level():
         for coordinates in cell.get_polygons():
-            electrodes.append([f'[{count}]', [coordinates]])
+            electrodes.append([f'[{count}]', [coordinates[::-1]]])
             count+=1
-            full_elec.append(np.array(coordinates)*L)
+            full_elec.append(np.array(coordinates[::-1])*L)
+    s = System([PolygonPixelElectrode(cover_height=cheight, cover_nmax=cmax, name=n, paths=map(np.array, p))
+                for n, p in electrodes]) 
+    
+    # creates a plot of electrode
+    if need_plot:
+        fig, ax = plt.subplots(1, 1, figsize = [30, 30])
+        s.plot(ax)
+        ax.set_title("electrode layout")
+        ymaxes = []
+        ymines = []
+        xmaxes = []
+        xmines = []
+        for elec in full_elec:
+            ymaxes.append(np.max(elec[:,1]/L))
+            ymines.append(np.min(elec[:,1]/L))
+            xmaxes.append(np.max(elec[:,0]/L))
+            xmines.append(np.min(elec[:,0]/L))
+        ax.set_xlim(np.min([1.2*np.min(xmines), 0.8*np.min(xmines)]), np.max([1.2*np.max(xmaxes), 0.8*np.max(xmaxes)]))
+        ax.set_ylim(np.min([1.2*np.min(ymines), 0.8*np.min(ymines)]), np.max([1.2*np.max(ymaxes), 0.8*np.max(ymaxes)]))
+            
+    if need_coordinates:
+        return s, full_elec
+    else:
+        return s
+    
+
+def polygons_reshape(full_electrode_list, order, L = 1e-6, need_plot = True, need_coordinates = True, cheight=0, cmax=0):
+    
+    electrodes = []
+    full_elec = []
+    
+    for i, elec in enumerate(order):
+        electrodes.append([f'[{i}]', [full_electrode_list[elec]/L]])
+        full_elec.append(np.array(full_electrode_list[elec]))
     s = System([PolygonPixelElectrode(cover_height=cheight, cover_nmax=cmax, name=n, paths=map(np.array, p))
                 for n, p in electrodes]) 
     
