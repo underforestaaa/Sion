@@ -23,10 +23,10 @@ To publish the results, obtained with *Sion*, the following articles should be c
 
 ## Features
 *   Simulation of ion motion in arbitrary polygon and point electrode surface trap.
-*   Optimization and simulation of arbitrary ion suttling in polygon traps.
-*   Calculation of normal modes for general case of 1D, 2D, 3D mixed species ion crystals with arbitrary set of ions' secular frequences.
+*   Optimization and simulation of arbitrary ion shuttling in polygon traps.
+*   Calculation of normal modes for general case of 1D, 2D, 3D mixed species ion crystals with arbitrary set of ions' secular frequencies.
 *   Calculation of anharmonic shift to mode frequencies and mode vectors, induced by the surface trap.
-*   Stability analysis of assymetric planar traps.
+*   Stability analysis of asymmetric planar traps.
 *   Optimization of DC voltage set of a planar trap to match the desired secular frequency set in given positions.
 *   Convenient trap design. Layout may be imported from GDS file or created by defining the arbitrary electrode shape boundary. 
 
