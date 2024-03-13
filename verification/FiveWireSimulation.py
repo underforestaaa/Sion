@@ -75,8 +75,10 @@ s.append(pl.langevinbath(0, 1e-7))
 #files with simulation information
 s.append(pl.dump('positions.txt', variables=['x', 'y', 'z'], steps=10))
 s.append(pl.evolve(1e5))
-s.execute()
-
+try:
+    s.execute()
+except:
+    pass
 
 _, data = pl.readdump('positions.txt')
 data *= 1e6
@@ -103,8 +105,9 @@ print('Final positions of ions in um:\n', ion_positions)
 
 """Normal modes"""
 
-axial_freqs, axial_modes = sn.linear_axial_modes(ion_positions, omega_sec[0], Z, mass)
-
+freqs, modes = sn.normal_modes(ion_positions, omega_sec, mass, linear = True)
+axial_freqs = freqs[0]
+axial_modes = modes[0]
 np.set_printoptions(0)
 
 print('Axial mode frequencies:', axial_freqs, 'Hz')

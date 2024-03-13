@@ -109,7 +109,10 @@ s.append(pl.langevinbath(0, 1e-6))
 #files with simulation information
 s.append(pl.dump('positions_mixed.txt', variables=['x', 'y', 'z'], steps=10))
 s.append(pl.evolve(1e5))
-s.execute()
+try:
+    s.execute()
+except:
+    pass
 
 _, data = pl.readdump('positions_mixed.txt')
 data *= 1e6
@@ -154,29 +157,13 @@ plt.show()
 
 ion_masses = np.array([mass2, mass1, mass2])
 
-freqs, modes = sn.normal_modes(ion_positions*L, omegas, ion_masses)
+freqs, modes = sn.normal_modes(ion_positions*L, omegas, ion_masses, linear = True)
 
-#Normal modes are presented in the order of the increase of their frequency
-# which doesn't always coincide with the principle axes of oscillation
-axial_modes = []
-axial_freqs = [] 
-for i in range(3*ion_number):
-    k = np.argmax(np.abs(modes[i]))
-    if k<ion_number:
-        axial_modes.append(modes[i][0:ion_number])
-        axial_freqs.append(freqs[i])
-    
-axial_modes = np.array(axial_modes)
+axial_modes = modes[0]
+axial_freqs = freqs[0]
 
-radial_modes_y = []
-radial_freqs_y = [] 
-for i in range(3*ion_number):
-    k = np.argmax(np.abs(modes[i]))
-    if k<2*ion_number and k>=ion_number:
-        radial_modes_y.append(modes[i][ion_number:2*ion_number])
-        radial_freqs_y.append(freqs[i])
-    
-radial_modes_y = np.array(radial_modes_y)
+radial_modes_y = modes[1]
+radial_freqs_y = freqs[1] 
 
 print('Axial freqs:', axial_freqs)
 print('Radial freqs y:', radial_freqs_y)
