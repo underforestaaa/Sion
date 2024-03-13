@@ -2008,7 +2008,7 @@ def normal_modes(ion_positions, omega_sec, ion_masses, charges = 1, linear = Fal
     try:
         omega_sec[0][0]
     except:
-        omega_sec = np.ones(N)*omega_sec
+        omega_sec = np.array([omega_sec for i in range(N)])
     A_matrix, M_matrix = hessian(ion_positions, omega_sec, ion_masses, charges)
     AA = np.dot(M_matrix, np.dot(A_matrix, M_matrix))
 
