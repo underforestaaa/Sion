@@ -80,7 +80,7 @@ def polygon_trap(uid, Omega, rf_voltages, dc_voltages, RFs, DCs, cover=(0, 0)):
             yt = f'(y - ({polygon[no-1, 1]:e}))'
             cov = 2*(m - cover[0])*cover[1]
             if cover[0] == 0:
-                z = f'z'
+                z = 'z'
             else:
                 z = f'(z + ({cov:e}))'
 
@@ -108,7 +108,7 @@ def polygon_trap(uid, Omega, rf_voltages, dc_voltages, RFs, DCs, cover=(0, 0)):
                         xc.append(
                             f'({dy:e})*{z}*{n}')
                     if (c**2 + dx**2 + dy**2 == 0):
-                        nothing = 0
+                        pass
                     elif (c**2 + dx**2 == 0):
                         zc.append(f'(-({dy:e})*x)*{n}')
                     elif (c**2 + dy**2 == 0):
@@ -150,8 +150,6 @@ def polygon_trap(uid, Omega, rf_voltages, dc_voltages, RFs, DCs, cover=(0, 0)):
             z = f'(z + ({cov:e}))'
 
             for k in range(no):
-                x1 = x2
-                y1 = y2
                 numo = numt
                 numt = k
                 rodc = f'sqrt({x2}^2+{y2}^2+{z}^2)'
@@ -174,7 +172,7 @@ def polygon_trap(uid, Omega, rf_voltages, dc_voltages, RFs, DCs, cover=(0, 0)):
                         xr.append(
                             f'({dy:e})*{z}*{n}')
                     if (c**2 + dx**2 + dy**2 == 0):
-                        nothing = 0
+                        pass
                     elif (c**2 + dx**2 == 0):
                         zr.append(f'(-({dy:e})*x)*{n}')
                     elif (c**2 + dy**2 == 0):
@@ -263,7 +261,7 @@ def point_trap(uid, trap, cover=(0, 0)):
                 yt = f'(y - ({elec[3][i][1]:e}))'
                 cov = 2 * (m - cover[0]) * cover[1]
                 if cov == 0:
-                    z = f'z'
+                    z = 'z'
                 else:
                     z = f'(z + ({cov:e}))'
                 r = f'sqrt({xt}^2+{yt}^2+{z}^2)'
@@ -306,7 +304,7 @@ def point_trap(uid, trap, cover=(0, 0)):
                 yt = f'(y - ({elec[2][i][1]:e}))'
                 cov = 2 * (m - cover[0]) * cover[1]
                 if cov == 0:
-                    z = f'z'
+                    z = 'z'
                 else:
                     z = f'(z + ({cov:e}))'
                 r = f'sqrt({xt}^2+{yt}^2+{z}^2)'
@@ -2024,9 +2022,18 @@ def normal_modes(ion_positions, omega_sec, ion_masses, charges = 1, linear = Fal
         x_freqs = norm_freqs[:N]
         y_freqs = norm_freqs[N:2*N]
         z_freqs = norm_freqs[2*N:]
-        x_modes = norm_modes[:N][:N]
-        y_modes = norm_modes[N:2*N][N:2*N]
-        z_modes = norm_modes[2*N:][2*N:]
+        x_modes = np.zeros([N,N])
+        y_modes = np.zeros([N,N])
+        z_modes = np.zeros([N,N])
+        for i in range(N):
+            for j in range(N):
+                x_modes[i, j] = norm_modes[i+0*N][j+0*N]
+        for i in range(N):
+            for j in range(N):
+                y_modes[i, j] = norm_modes[i+1*N][j+1*N]
+        for i in range(N):
+            for j in range(N):
+                z_modes[i, j] = norm_modes[i+2*N][j+2*N]
         return np.array([x_freqs, y_freqs, z_freqs]), np.array([x_modes, y_modes, z_modes])
     else:    
         return norm_freqs, norm_modes
