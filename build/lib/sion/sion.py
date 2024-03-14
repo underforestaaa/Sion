@@ -1398,25 +1398,36 @@ def point_trap_design(frequencies, rf_voltages, dc_voltages, boundaries, scale, 
     trap = [trap_rf, trap_dc]
     
     if need_plot:
-        fig, ax = plt.subplots(1,2,figsize=(13, 5))
-        s.plot_voltages(ax[0], u=s.rfs)
-        ax[0].set_xlim((-scale, scale))
-        ax[0].set_ylim((-scale, scale))
-        ax[0].set_title("RF voltage")
-        s.plot_voltages(ax[1], u=s.dcs)
-        ax[1].set_title('dc voltage')
-        ax[1].set_xlim((-scale, scale))
-        ax[1].set_ylim((-scale, scale))
-        try:
-            cmap = plt.cm.RdBu_r
-            norm = mpl.colors.Normalize(vmin=np.min(dc_voltages), vmax=np.max(dc_voltages))
-
-            cb = fig.colorbar(plt.cm.ScalarMappable(norm=norm, cmap=cmap),ax=ax, shrink =0.9)
-
-            cb.ax.tick_params(labelsize=8)
-            cb.set_label('Voltage', fontsize = 8)
-        except:
-            pass
+        if len(dc_voltages)>0:
+            fig, ax = plt.subplots(1,2,figsize=(13, 5))
+            s.plot_voltages(ax[0], u=s.rfs)
+            ax[0].set_xlim((-scale, scale))
+            ax[0].set_ylim((-scale, scale))
+            ax[0].set_title("RF voltage")
+            s.plot_voltages(ax[1], u=s.dcs)
+            ax[1].set_title('dc voltage')
+            ax[1].set_xlim((-scale, scale))
+            ax[1].set_ylim((-scale, scale))
+            try:
+                cmap = plt.cm.RdBu_r
+                norm = mpl.colors.Normalize(vmin=np.min(dc_voltages), vmax=np.max(dc_voltages))
+    
+                cb = fig.colorbar(plt.cm.ScalarMappable(norm=norm, cmap=cmap),ax=ax, shrink =0.9)
+    
+                cb.ax.tick_params(labelsize=8)
+                cb.set_label('Voltage', fontsize = 8)
+            except:
+                pass
+        else:
+            fig, ax = plt.subplots(1,2,figsize=(11.5, 5))
+            s.plot_voltages(ax[0], u=s.rfs)
+            ax[0].set_xlim((-scale, scale))
+            ax[0].set_ylim((-scale, scale))
+            ax[0].set_title("RF voltage")
+            s.plot_voltages(ax[1], u=s.dcs)
+            ax[1].set_title('dc voltage')
+            ax[1].set_xlim((-scale, scale))
+            ax[1].set_ylim((-scale, scale))
         plt.show()
 
     if need_coordinates:
