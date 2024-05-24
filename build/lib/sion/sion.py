@@ -1494,10 +1494,15 @@ def n_rf_trap_design(Urf, DCtop, DCbottom, cwidth, rfwidth, rflength, n_rf=1, L 
     RF = []
     electrodes = []
     for i in range(n_rf):
-        rf_top = [[-rflength/2, cwidth+i*rfwidth[i][0]], [rflength/2, cwidth+i*rfwidth[i][0]],
-                  [rflength/2, cwidth+(i+1)*rfwidth[i][0]], [-rflength/2, cwidth+(i+1)*rfwidth[i][0]]]
-        rf_bottom = [[-rflength / 2,  -(i+1) * rfwidth[i][1]], [rflength / 2, -(i+1) * rfwidth[i][1]],
-                     [rflength / 2, -i * rfwidth[i][1]], [-rflength / 2, -i * rfwidth[i][1]]]
+        tops = 0
+        bots = 0
+        for k in range(i):
+            tops += rfwidth[k][0]
+            bots += rfwidth[k][1]
+        rf_top = [[-rflength/2, cwidth+tops], [rflength/2, cwidth+tops],
+                  [rflength/2, cwidth+tops+rfwidth[i][0]], [-rflength/2, cwidth+tops+rfwidth[i][0]]]
+        rf_bottom = [[-rflength / 2,  -bots-rfwidth[i][1]], [rflength / 2, -bots-rfwidth[i][1]],
+                     [rflength / 2, -bots], [-rflength / 2, -bots]]
         st = 'rf' + str(i)+'u'
         electrodes.append([st, [rf_top]])
         st = 'rf' + str(i)+'d'
@@ -1776,6 +1781,144 @@ def polygons_reshape(full_electrode_list, order, L = 1e-6, need_plot = True, nee
         return s, full_elec
     else:
         return s
+    
+def gapping(elec, gap):
+    '''
+    Shrinks polygonal electrode by the "gap" parameter, creating gaps between electrodes
+
+    Parameters
+    ----------
+    elec : np.array shape [number of points in electrode, 2]
+        Electrode to shrink, defined by its coordinates.
+    gap : float
+        Length to shrink the electrode. Corresponds to the width of the gap /2.
+
+    Returns
+    -------
+    gapped : np.array shape [number of points in electrode, 2]
+        Shrinked electrode.
+
+    '''
+    try:
+        from shapely.geometry import Point
+        from shapely.geometry.polygon import Polygon
+    except:
+        sys.exit("shapely is not installed.")
+    
+    poly = Polygon(elec)
+    gapped = []
+    newel = np.concatenate([[elec[-1]], elec, [elec[0]]])
+    for i, el in enumerate(newel):
+        try:
+            prev = el-newel[i-1]
+            nest = newel[i+1]-el
+        except:
+            pass
+        if nest[0]>0 and prev[1]<0:
+            dot1 = el + np.array([gap, gap])
+            dot2 = el - np.array([gap, gap])
+            point = Point(dot1[0], dot1[1])
+            if poly.contains(point):
+                gapped.append(dot1)
+            else:
+                gapped.append(dot2)
+        if nest[1]>0 and prev[0]>0:
+            dot1 = el + np.array([-gap, gap])
+            dot2 = el - np.array([-gap, gap])
+            point = Point(dot1[0], dot1[1])
+            if poly.contains(point):
+                gapped.append(dot1)
+            else:
+                gapped.append(dot2)
+        if nest[0]<0 and prev[1]>0:
+            dot1 = el + np.array([-gap, -gap])
+            dot2 = el - np.array([-gap, -gap])
+            point = Point(dot1[0], dot1[1])
+            if poly.contains(point):
+                gapped.append(dot1)
+            else:
+                gapped.append(dot2)
+        if nest[1]<0 and prev[0]<0:
+            dot1 = el + np.array([gap, -gap])
+            dot2 = el - np.array([gap, -gap])
+            point = Point(dot1[0], dot1[1])
+            if poly.contains(point):
+                gapped.append(dot1)
+            else:
+                gapped.append(dot2)
+        if nest[0]>0 and prev[1]>0:
+            dot1 = el + np.array([-gap, gap])
+            dot2 = el - np.array([-gap, gap])
+            point = Point(dot1[0], dot1[1])
+            if poly.contains(point):
+                gapped.append(dot1)
+            else:
+                gapped.append(dot2)
+        if nest[1]>0 and prev[0]<0:
+            dot1 = el + np.array([-gap, -gap])
+            dot2 = el - np.array([-gap, -gap])
+            point = Point(dot1[0], dot1[1])
+            if poly.contains(point):
+                gapped.append(dot1)
+            else:
+                gapped.append(dot2)
+        if nest[0]<0 and prev[1]<0:
+            dot1 = el + np.array([-gap, gap])
+            dot2 = el - np.array([-gap, gap])
+            point = Point(dot1[0], dot1[1])
+            if poly.contains(point):
+                gapped.append(dot1)
+            else:
+                gapped.append(dot2)
+        if nest[1]<0 and prev[0]>0:
+            dot1 = el + np.array([gap, gap])
+            dot2 = el - np.array([gap, gap])
+            point = Point(dot1[0], dot1[1])
+            if poly.contains(point):
+                gapped.append(dot1)
+            else:
+                gapped.append(dot2)
+                
+    gapped = np.array(gapped)
+    return gapped
+
+def polygon_to_gds(trap, name, gap = 0):
+    '''
+    Creates GDS file of the trap with a given (uniformal) gap between electrodes
+
+    Parameters
+    ----------
+    trap : list shape [ number of electrodes, electrode shape]
+        List of electrode coordinates for each electrode in the trap. Must be 
+        in um scale.
+    name : str
+        Name of the file to create GDS. Must end with '.gds'.
+    gap : float, optional
+        Gap width between two electrodes. The default is 0.
+
+    Returns
+    -------
+    None.
+
+    '''
+    try:
+        import gdspy
+    except:
+        sys.exit("gdspy is not installed.")
+    lib = gdspy.GdsLibrary()
+    try:
+        r = np.random.choice(1000, 1)
+        cell = lib.new_cell(f'gold{r}')
+    except:
+        r = np.random.choice(1000, 1)
+        cell = lib.new_cell(f'gold{r}')
+    for rect in trap:
+        rec = gapping(rect, gap/2)
+        poly = gdspy.Polygon(rec)                          
+        cell.add(poly)
+    lib.write_gds(name)
+    pass
+    
 
 """
 Useful tools for initializing the simulation
@@ -2579,7 +2722,7 @@ The potential minimum is determined with its own optimization, which is already
 written in Cython, so only minor increase in speed can be obtained by rewritting these functions in C. 
 """
 
-def v_lossf(uset, numbers, s, dots, axis, omegas, Z, M, L = 1e-6):
+def v_lossf(uset, numbers, s, dots, axis, omegas, Z, M, L, micro):
     """
     Loss function for the DC voltage optimization.
     If the individual potential well is lost, returns 1000
@@ -2593,9 +2736,8 @@ def v_lossf(uset, numbers, s, dots, axis, omegas, Z, M, L = 1e-6):
     """
 
     loss = 0
-    
-    u_set = np.zeros(numbers[0])
-    u_set = np.append(u_set, uset)
+    u_set = np.zeros(len([rfs for rfs in s.rfs if rfs != 0]))
+    u_set = np.concatenate([u_set, uset])
     
     #obtain result of the function
     with s.with_voltages(dcs = u_set, rfs = None):
@@ -2605,13 +2747,15 @@ def v_lossf(uset, numbers, s, dots, axis, omegas, Z, M, L = 1e-6):
                 curv, mod_dir=s.modes(x1,sorted=False) 
                 for j, axs in enumerate(axis):
                     omega = (np.sqrt(Z*curv[axs]/M)/(L*2*np.pi) * 1e-6)/omegas[j][0]
-                    loss += (omega - omegas[j][i]/omegas[j][0])**2
+                    loss += (omega - omegas[j][i]/omegas[j][0])**2 
+                loss += micro*np.linalg.norm(x1-pos)**2
+
             except: 
                 sys.exit("The ion in %s positions is lost." %i)
             
     return loss
 
-def v_stoch_grad(uset, stoch, numbers, s, dots, axis, omegas, Z, M, L = 1e-6):
+def v_stoch_grad(uset, stoch, numbers, s, dots, axis, omegas, Z, M, L, micro):
     """
     Calculates stochastic gradient, where partial derivative is calculated 
     only for "stoch:int" randomly chosen parameters
@@ -2622,21 +2766,22 @@ def v_stoch_grad(uset, stoch, numbers, s, dots, axis, omegas, Z, M, L = 1e-6):
         Calculated gradient
 
     """
-    
-    df = np.zeros(numbers[1])
-    param = np.random.choice(numbers[1], stoch, replace = 'False')
+    rflen = len([rfs for rfs in s.rfs if rfs != 0])
+    dclen = len(s.dcs)
+    df = np.zeros(dclen-rflen)
+    param = np.random.choice(numbers, stoch, replace = 'False')
     param = np.sort(param)
     for i in param:
         uset[i] += 1e-8
-        fplus = v_lossf(uset, numbers, s, dots, axis, omegas, Z, M, L)
+        fplus = v_lossf(uset, numbers, s, dots, axis, omegas, Z, M, L, micro)
         uset[i] -= 2e-8
-        fmin = v_lossf(uset, numbers, s, dots, axis, omegas, Z, M, L)
+        fmin = v_lossf(uset, numbers, s, dots, axis, omegas, Z, M, L, micro)
         uset[i] += 1e-8
         df[i]  = (fplus - fmin)/(2e-8)
         
     return np.array(df)
 
-def v_precise_grad(uset, numbers, s, dots, axis, omegas, Z, M, L = 1e-6):
+def v_precise_grad(uset, numbers, s, dots, axis, omegas, Z, M, L, micro):
     """
     Calculates exact gradient of loss function
 
@@ -2646,12 +2791,15 @@ def v_precise_grad(uset, numbers, s, dots, axis, omegas, Z, M, L = 1e-6):
         Calculated gradient
     """
     
-    df = np.zeros(numbers[1])
-    for i, el in enumerate(df):
+    rflen = len([rfs for rfs in s.rfs if rfs != 0])
+    dclen = len(s.dcs)
+    df = np.zeros(dclen-rflen)
+    
+    for i in numbers:
         uset[i] += 1e-8
-        fplus = v_lossf(uset, numbers, s, dots, axis, omegas, Z, M, L)
+        fplus = v_lossf(uset, numbers, s, dots, axis, omegas, Z, M, L, micro)
         uset[i] -= 2e-8
-        fmin = v_lossf(uset, numbers, s, dots, axis, omegas, Z, M, L)
+        fmin = v_lossf(uset, numbers, s, dots, axis, omegas, Z, M, L, micro)
         uset[i] += 1e-8
         df[i]  = (fplus - fmin)/(2e-8)
         
@@ -2659,7 +2807,7 @@ def v_precise_grad(uset, numbers, s, dots, axis, omegas, Z, M, L = 1e-6):
 
 
 
-def voltage_optimization(s, numbers, Z, M, dots, axis, omegas, start_uset, learning_rate, stoch = 0, eps = 1e-8, L = 1e-6, step = 100):
+def voltage_optimization(s, Z, M, dots, axis, omegas, start_dcset, learning_rate, numbers = 0, stoch = 0, eps = 1e-8, L = 1e-6, step = 100, micro = False):
     """
     A function, determining the DC voltage set for the trap, at which the set
     of desired secular frequencies is achieved at the requested positions, 
@@ -2676,8 +2824,6 @@ def voltage_optimization(s, numbers, Z, M, dots, axis, omegas, start_uset, learn
     s : electrode.System object
         Your trap. It is important, that its RF potential is predetermined, 
         and all DC electrodes are grounded, before applying this function.
-    numbers : list shape (2)
-        [Number of RF electrodes, Number of DC electrodes]
     Z : float
         Ion charge
     M : float
@@ -2692,11 +2838,14 @@ def voltage_optimization(s, numbers, Z, M, dots, axis, omegas, start_uset, learn
     omegas : list shape (len(axis), number of positions)
         Set of desired secular frequencies in MHz (/2pi), given for 
         all positions and axes. 
-    start_uset : list shape (numbers[1])
+    start_dcset : list shape (numbers[1])
         Starting voltages for the optimization. The closer they are, the faster the algorithm
     learning_rate : float
         Learning rate of the algorithm. The optimal learning rate may take 
         various values from 0.000001 to 1000. This should be tested in a particular case.
+    numbers : list shape (number of optimizing electrodes) or int, optional
+        list of the indeces of DC electrodes, used for optimization. 
+        If 0 (default), all DC elecrtodes are used for optimization.
     stoch : int, optional
         The default is 0. This value indicates, if the exact gradient descent 
         (stoch == 0) is performed, or the stochastic gradient descent, with 
@@ -2711,6 +2860,9 @@ def voltage_optimization(s, numbers, Z, M, dots, axis, omegas, start_uset, learn
     step : int, optional
         Number of iterations, at which the current voltage set will be printed.
         The default is 100.
+    micro : bool, optional
+        If True, optimization tries to include micromotion compensation to voltage set.
+        The default is False.
 
     Returns
     -------
@@ -2719,11 +2871,15 @@ def voltage_optimization(s, numbers, Z, M, dots, axis, omegas, start_uset, learn
 
     """
     
-    uset = start_uset
-    loss2 =  v_lossf(uset, numbers, s, dots, axis, omegas, Z, M, L)
+    uset = np.array(start_dcset)
+    if micro:
+        mic = 1
+    else:
+        mic = 0
+    loss2 =  v_lossf(uset, numbers, s, dots, axis, omegas, Z, M, L, mic)
     print("Initial loss:", loss2)
     
-    m = v_precise_grad(start_uset, numbers, s, dots, axis, omegas, Z, M, L)
+    m = v_precise_grad(uset, numbers, s, dots, axis, omegas, Z, M, L, mic)
     v = np.square(m)
     b1 = 0.9
     b2 = 0.999
@@ -2733,15 +2889,15 @@ def voltage_optimization(s, numbers, Z, M, dots, axis, omegas, start_uset, learn
     if stoch == 0:
         for k in big:
             for kk in small:
-                grad = v_precise_grad(uset, numbers, s, dots, axis, omegas, Z, M, L)
+                grad = v_precise_grad(uset, numbers, s, dots, axis, omegas, Z, M, L, mic)
                 m = b1*m+(1-b1)*grad
                 v = b2*v+(1-b2)*np.square(grad)
                 mtilde = m/(1-b1**(1+t))
                 vtilde = v/(1-b2**(1+t))
-                v_sqrt = np.sqrt(vtilde) + np.ones(numbers[1])*1e-8
+                v_sqrt = np.sqrt(vtilde) + np.ones(len(grad))*1e-8
                 uset = uset - learning_rate*np.divide(mtilde,v_sqrt)
                 t+=1
-            loss2 = v_lossf(uset, numbers, s, dots, axis, omegas, Z, M, L)
+            loss2 = v_lossf(uset, numbers, s, dots, axis, omegas, Z, M, L, mic)
             print("Iteration:", t, "Loss function:", loss2)
             print("uset =", list(uset),"\n")
             if loss2 <= eps:
@@ -2749,15 +2905,15 @@ def voltage_optimization(s, numbers, Z, M, dots, axis, omegas, start_uset, learn
     else:
         for k in big:
             for kk in small:
-                grad = v_stoch_grad(uset, stoch, numbers, s, dots, axis, omegas, Z, M, L)
+                grad = v_stoch_grad(uset, stoch, numbers, s, dots, axis, omegas, Z, M, L, mic)
                 m = b1*m+(1-b1)*grad
                 v = b2*v+(1-b2)*np.square(grad)
                 mtilde = m/(1-b1**(1+t))
                 vtilde = v/(1-b2**(1+t))
-                v_sqrt = np.sqrt(vtilde) + np.ones(numbers[1])*1e-8
+                v_sqrt = np.sqrt(vtilde) + np.ones(len(grad))*1e-8
                 uset = uset - learning_rate*np.divide(mtilde,v_sqrt)
                 t+=1
-            loss2 = v_lossf(uset, numbers, s, dots, axis, omegas, Z, M, L)
+            loss2 = v_lossf(uset, numbers, s, dots, axis, omegas, Z, M, L, mic)
             print("Iteration:", t, "Loss function:", loss2)
             print("uset =", list(uset),"\n")
             if loss2 <= eps:
