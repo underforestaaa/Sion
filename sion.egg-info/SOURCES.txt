@@ -1,9 +1,8 @@
+LICENSE
 MANIFEST.in
 readme.md
 setup.cfg
 setup.py
-sion/__init__.py
-sion/sion.py
 sion.egg-info/PKG-INFO
 sion.egg-info/SOURCES.txt
 sion.egg-info/dependency_links.txt

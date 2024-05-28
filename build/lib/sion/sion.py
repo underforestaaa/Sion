@@ -600,7 +600,7 @@ def shuttling_voltage(s, starts, routes, T, dc_set, shuttlers = 0, vmin = -15, v
     if shuttlers == 0:
         shuttlers = range(len(dc_set))
     try:
-        starts[0,0]
+        starts[0][0]
     except:
         starts = np.array([starts])
     bnds = [(vmin,vmax) for el in shuttlers]
@@ -902,7 +902,7 @@ def circle_packaging(scale, boundary, n, res):
     return np.array(ps), np.array(ars)
 
 
-def five_wire_trap_design(Urf, DCtop, DCbottom, cwidth, clength, boardwidth, rftop, rflength, rfbottom, need_coordinates = False, L = 1e-6, patternTop = 1, patternBot = 1, getCoordinate = False, gapped = 0, cheight=0, cmax=0, need_plot = False):
+def five_wire_trap_design(Urf, DCtop, DCbottom, cwidth, clength, boardwidth, rftop, rflength, rfbottom, need_coordinates = False, L = 1e-6, patternTop = 1, patternBot = 1, getCoordinate = False, gapped = 0, cheight=0, cmax=0, need_plot = False, save_plot = None):
     '''
     Elaborate function, designing arbitrary five-wire trap.
 
@@ -952,6 +952,10 @@ def five_wire_trap_design(Urf, DCtop, DCbottom, cwidth, clength, boardwidth, rft
         Expansion order for cover electrode. Usually 5 is sufficient for correct calculations. The default is 0.
     need_plot : bool, optional
         If True, returns a plot of the trap with specified RF electrode. The default is False.
+    save_plot : str, optional
+        Saves the plot to the file for the provided path.
+        For example: "images\five-wire_trap.eps" will create this file with the plot.
+        The default is None.
 
     Returns
     -------
@@ -1196,6 +1200,9 @@ def five_wire_trap_design(Urf, DCtop, DCbottom, cwidth, clength, boardwidth, rft
             axi.set_aspect("equal")
             axi.set_xlim(-xmax, xmax)
             axi.set_ylim(-ymaxn, ymaxp)
+        if save_plot:
+            plt.tight_layout()
+            plt.savefig(save_plot)
     if need_coordinates:
         RF_electrodes=[]
         for iterr in range(2):
@@ -1209,7 +1216,7 @@ def five_wire_trap_design(Urf, DCtop, DCbottom, cwidth, clength, boardwidth, rft
         return s
 
 
-def ring_trap_design(Urf, Omega, r, R, r_dc = 0, v_dc = 0, res = 100, need_coordinates = False, need_plot = False, cheight=0, cmax=0):
+def ring_trap_design(Urf, Omega, r, R, r_dc = 0, v_dc = 0, res = 100, need_coordinates = False, need_plot = False, cheight=0, cmax=0, save_plot = None):
     '''
     Function for designing the ring RF trap with (optionally) central DC electrode
 
@@ -1239,6 +1246,10 @@ def ring_trap_design(Urf, Omega, r, R, r_dc = 0, v_dc = 0, res = 100, need_coord
         Height of cover electrode - grounded plane above the trap. The default is 0.
     cmax : int, optional
         Expansion order for cover electrode. Usually 5 is sufficient for correct calculations. The default is 0.
+    save_plot : str, optional
+        Saves the plot to the file for the provided path.
+        For example: "images\five-wire_trap.eps" will create this file with the plot.
+        The default is None.
 
     Returns
     -------
@@ -1273,9 +1284,9 @@ def ring_trap_design(Urf, Omega, r, R, r_dc = 0, v_dc = 0, res = 100, need_coord
     dc_voltages = [v_dc]
     scale = R*1.5
     
-    return point_trap_design(frequencies, rf_voltages, dc_voltages, ring_boundary, scale, res, need_coordinates = need_coordinates, need_plot = need_plot, cheight=cheight, cmax=cmax)
+    return point_trap_design(frequencies, rf_voltages, dc_voltages, ring_boundary, scale, res, need_coordinates = need_coordinates, need_plot = need_plot, cheight=cheight, cmax=cmax, save_plot = save_plot)
 
-def point_trap_design(frequencies, rf_voltages, dc_voltages, boundaries, scale, resolution, need_coordinates = False, need_plot = False, cheight=0, cmax=0):
+def point_trap_design(frequencies, rf_voltages, dc_voltages, boundaries, scale, resolution, need_coordinates = False, need_plot = False, cheight=0, cmax=0, save_plot = None):
     '''
     Function for designing arbitrarily shape point trap.
     Each electrode shape is determined by provided boundary.
@@ -1315,6 +1326,10 @@ def point_trap_design(frequencies, rf_voltages, dc_voltages, boundaries, scale, 
         Height of cover electrode - grounded plane above the trap. The default is 0.
     cmax : int, optional
         Expansion order for cover electrode. Usually 5 is sufficient for correct calculations. The default is 0.
+    save_plot : str, optional
+        Saves the plot to the file for the provided path.
+        For example: "images\five-wire_trap.eps" will create this file with the plot.
+        The default is None.
 
     Returns
     -------
@@ -1408,16 +1423,21 @@ def point_trap_design(frequencies, rf_voltages, dc_voltages, boundaries, scale, 
             ax[1].set_title('dc voltage')
             ax[1].set_xlim((-scale, scale))
             ax[1].set_ylim((-scale, scale))
+            ax[0].set_aspect('equal', adjustable='box')
+            ax[1].set_aspect('equal', adjustable='box')
             try:
                 cmap = plt.cm.RdBu_r
                 norm = mpl.colors.Normalize(vmin=np.min(dc_voltages), vmax=np.max(dc_voltages))
     
-                cb = fig.colorbar(plt.cm.ScalarMappable(norm=norm, cmap=cmap),ax=ax, shrink =0.9)
+                cb = fig.colorbar(plt.cm.ScalarMappable(norm=norm, cmap=cmap),ax=ax, shrink=1, aspect=25)
     
                 cb.ax.tick_params(labelsize=8)
-                cb.set_label('Voltage', fontsize = 8)
+                cb.set_label('Voltage, V', fontsize = 8)
             except:
                 pass
+            if save_plot:
+                plt.savefig(save_plot, bbox_inches='tight')
+            
         else:
             fig, ax = plt.subplots(1,2,figsize=(11.5, 5))
             s.plot_voltages(ax[0], u=s.rfs)
@@ -1428,6 +1448,10 @@ def point_trap_design(frequencies, rf_voltages, dc_voltages, boundaries, scale, 
             ax[1].set_title('dc voltage')
             ax[1].set_xlim((-scale, scale))
             ax[1].set_ylim((-scale, scale))
+            ax[0].set_aspect('equal', adjustable='box')
+            ax[1].set_aspect('equal', adjustable='box')
+            if save_plot:
+                plt.savefig(save_plot)
         plt.show()
 
     if need_coordinates:
@@ -1437,7 +1461,7 @@ def point_trap_design(frequencies, rf_voltages, dc_voltages, boundaries, scale, 
 
 
 def n_rf_trap_design(Urf, DCtop, DCbottom, cwidth, rfwidth, rflength, n_rf=1, L = 1e-6, patternTop=1,
-              patternBot=1, cheight=0, cmax=0, need_coordinates = False, need_plot = False):
+              patternBot=1, cheight=0, cmax=0, need_coordinates = False, need_plot = False, save_plot = None):
     '''
     Function for designing the surface trap, similar to five-wire trap, 
     but with n_rf RF electrodes on each side of the central one.
@@ -1478,6 +1502,10 @@ def n_rf_trap_design(Urf, DCtop, DCbottom, cwidth, rfwidth, rflength, n_rf=1, L 
         If True, returns the coordinates, scaled by L to SU form, used by polygon_simulation(). The default is False.
     need_plot : bool, optional
         If True, returns a plot of the trap with specified RF electrode. The default is False.
+    save_plot : str, optional
+        Saves the plot to the file for the provided path.
+        For example: "images\five-wire_trap.eps" will create this file with the plot.
+        The default is None.
 
     Returns
     -------
@@ -1642,13 +1670,16 @@ def n_rf_trap_design(Urf, DCtop, DCbottom, cwidth, rfwidth, rflength, n_rf=1, L 
             axi.set_aspect("equal")
             axi.set_xlim(-xmax, xmax)
             axi.set_ylim(-ymaxn, ymaxp)
+        if save_plot:
+            plt.tight_layout()
+            plt.savefig(save_plot)
             
     if need_coordinates:
         return s, RF, DC
     else:
         return s
 
-def polygons_from_gds(gds_lib, L = 1e-6, need_plot = True, need_coordinates = True, cheight=0, cmax=0):
+def polygons_from_gds(gds_lib, L = 1e-6, need_plot = True, need_coordinates = True, cheight=0, cmax=0, save_plot = None):
     '''
     Creates polygon trap from GDS file, consisting this trap. 
     It then plots the trap with indexes for each electrode, 
@@ -1669,6 +1700,10 @@ def polygons_from_gds(gds_lib, L = 1e-6, need_plot = True, need_coordinates = Tr
         Height of cover electrode - grounded plane above the trap. The default is 0.
     cmax : int, optional
         Expansion order for cover electrode. Usually 5 is sufficient for correct calculations. The default is 0.
+    save_plot : str, optional
+        Saves the plot to the file for the provided path.
+        For example: "images\five-wire_trap.eps" will create this file with the plot.
+        The default is None.
 
     Returns
     -------
@@ -1712,6 +1747,9 @@ def polygons_from_gds(gds_lib, L = 1e-6, need_plot = True, need_coordinates = Tr
             xmines.append(np.min(elec[:,0]/L))
         ax.set_xlim(np.min([1.2*np.min(xmines), 0.8*np.min(xmines)]), np.max([1.2*np.max(xmaxes), 0.8*np.max(xmaxes)]))
         ax.set_ylim(np.min([1.2*np.min(ymines), 0.8*np.min(ymines)]), np.max([1.2*np.max(ymaxes), 0.8*np.max(ymaxes)]))
+        if save_plot:
+            plt.tight_layout()
+            plt.savefig(save_plot)
             
     if need_coordinates:
         return s, full_elec
@@ -1719,7 +1757,7 @@ def polygons_from_gds(gds_lib, L = 1e-6, need_plot = True, need_coordinates = Tr
         return s
     
 
-def polygons_reshape(full_electrode_list, order, L = 1e-6, need_plot = True, need_coordinates = True, cheight=0, cmax=0):
+def polygons_reshape(full_electrode_list, order, L = 1e-6, need_plot = True, need_coordinates = True, cheight=0, cmax=0, save_plot = None):
     '''
     Sometimes it is convenient to have specific order of electrodes: RF starting first and so on.
     This function will reorder the electrode array, obtained from polygon_to_gds(),
@@ -1742,6 +1780,10 @@ def polygons_reshape(full_electrode_list, order, L = 1e-6, need_plot = True, nee
         Height of cover electrode - grounded plane above the trap. The default is 0.
     cmax : int, optional
         Expansion order for cover electrode. Usually 5 is sufficient for correct calculations. The default is 0.
+    save_plot : str, optional
+        Saves the plot to the file for the provided path.
+        For example: "images\five-wire_trap.eps" will create this file with the plot.
+        The default is None.
 
     Returns
     -------
@@ -1776,6 +1818,9 @@ def polygons_reshape(full_electrode_list, order, L = 1e-6, need_plot = True, nee
             xmines.append(np.min(elec[:,0]/L))
         ax.set_xlim(np.min([1.2*np.min(xmines), 0.8*np.min(xmines)]), np.max([1.2*np.max(xmaxes), 0.8*np.max(xmaxes)]))
         ax.set_ylim(np.min([1.2*np.min(ymines), 0.8*np.min(ymines)]), np.max([1.2*np.max(ymaxes), 0.8*np.max(ymaxes)]))
+        if save_plot:
+            plt.tight_layout()
+            plt.savefig(save_plot)
             
     if need_coordinates:
         return s, full_elec
@@ -2542,7 +2587,7 @@ def anharmonics(s, minimums, axis, L = 1e-6):
 Stability analysis
 """
 
-def stability(s, Ms, Omega, Zs, minimum, L = 1e-6, need_plot = True):
+def stability(s, Ms, Omega, Zs, minimum, L = 1e-6, need_plot = True, save_plot = None):
     """
     Returns stability parameters for the linear planar trap (RF confinement only radial)
     If asked, return plot of the stability a-q diagram for this trap and plots 
@@ -2569,6 +2614,10 @@ def stability(s, Ms, Omega, Zs, minimum, L = 1e-6, need_plot = True):
     need_plot : int, optional
         if True, then the plot of the stability diagram and the 
         a-q parameters for this voltage configuration is shown. The default is True.
+    save_plot : str, optional
+        Saves the plot to the file for the provided path.
+        For example: "images\five-wire_trap.eps" will create this file with the plot.
+        The default is None.
 
     Returns
     -------
@@ -2705,8 +2754,9 @@ def stability(s, Ms, Omega, Zs, minimum, L = 1e-6, need_plot = True):
             plt.scatter(params[f'Ion (M = {round(M/amu):d}, Z = {round(Z/ech):d})']['q'], params[f'Ion (M = {round(M/amu):d}, Z = {round(Z/ech):d})']['a'], s = 40, edgecolor='black', color = colors[k], label = f'Ion (M = {round(M/amu):d}, Z = {round(Z/ech):d})' )
             k = (k+1)%8
         plt.legend()
-        
         plt.tight_layout()
+        if save_plot:
+            plt.savefig(save_plot)
     
         plt.show()
         
@@ -2870,12 +2920,15 @@ def voltage_optimization(s, Z, M, dots, axis, omegas, start_dcset, learning_rate
         Resulting voltage set.
 
     """
-    
     uset = np.array(start_dcset)
     if micro:
         mic = 1
     else:
         mic = 0
+    try:
+        numbers[0]
+    except:
+        numbers = np.arange(len(uset))
     loss2 =  v_lossf(uset, numbers, s, dots, axis, omegas, Z, M, L, mic)
     print("Initial loss:", loss2)
     
