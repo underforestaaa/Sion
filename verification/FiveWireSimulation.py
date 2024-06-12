@@ -77,6 +77,7 @@ s.append(pl.dump('positions.txt', variables=['x', 'y', 'z'], steps=10))
 s.append(pl.evolve(1e5))
 try:
     s.execute()
+    pass
 except:
     pass
 
@@ -121,13 +122,23 @@ theor_modes = -1*np.array([[0.4472,0.4472,0.4472,0.4472,0.4472],[0.6395,0.3017, 
 theor_freqs = np.array([1,3,5.818,9.332,13.47])
 freqs = np.sqrt(theor_freqs)*omega_sec[0]
 print('Verification process.')
+
+l2 = (ct.e**2 / (4 * np.pi * ct.epsilon_0 * 40 * ct.atomic_mass * (omega_sec[0] * 2 * np.pi) ** 2)) ** (1/3)
+theor_positions = np.array([-1.7429, -0.8221, 0, 0.8221, 1.7429]) * l2
+pos_diff = np.linalg.norm(theor_positions - final_x[sort]*1e-6)
+
+print('Difference from theoretical positions:', np.round(pos_diff * 1e6, 4), 'um')
+
 print('Difference from theoretical frequencies:', np.round(np.abs(freqs-axial_freqs),1), 'Hz')
-dif = axial_modes - theor_modes
+
 diff = np.zeros(5)
 for i in range(5):
+    dif = axial_modes - theor_modes
     diff[i] = np.linalg.norm(dif[i])
+    if diff[i] > 1:
+        dif = axial_modes + theor_modes
+        diff[i] = np.linalg.norm(dif[i])
 print('Difference in mode vectors', diff)
-print('If the difference is 2, then the mode just flipped a sign.')
 
 # Plot of ion crystal evolution
 plt.figure()
