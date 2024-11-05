@@ -3,7 +3,6 @@ import numpy as np
 import matplotlib.pyplot as plt
 import matplotlib as mpl
 from electrode import (System, PolygonPixelElectrode, PointPixelElectrode)
-import sys
 from scipy.optimize import (minimize, curve_fit)
 import scipy.constants as ct
 import gdspy
@@ -11,11 +10,7 @@ from shapely.geometry import Point
 from shapely.geometry.polygon import Polygon
 from tqdm import tqdm
 import warnings
-
-
-ech = 1.602176634e-19  # electron charge, C
-amu = 1.66053906660e-27  # atomic mass unit, kg
-eps0 = 8.8541878128e-12  # vacuum electric permittivity
+from skopt import dummy_minimize
 
 """
 Functions, simulating the ion dynamics above planar traps
@@ -24,25 +19,24 @@ Functions, simulating the ion dynamics above planar traps
 @lammps.fix
 def polygon_trap(uid, Omega, rf_voltages, dc_voltages, RFs, DCs, cover=(0, 0)):
     """
-    Simulates an arbitrary planar trap with polygonal electrodes. 
-    Everything must be in standard units
+    Simulates an arbitrary planar trap with polygonal electrodes. Everything must be in standard units.
 
     Parameters
     ----------
     uid : str
         ions ID, .self parameter
-    Omega : float or list shape len(RFs)
+    Omega : float or list shape([len(RF electrodes)])
         array of RF frequencies (or a frequency if they are the same) of each RF electrode
-    rf_voltages : array shape (len(RFs))
+    rf_voltages : array shape([len(RF electrodes)])
         Set of the peak voltages on RF electrodes.
-    dc_voltages : array shape (len(DCs))
+    dc_voltages : array shape([len(DC electrodes)])
         Set of the voltages on DC electrodes.
-    RFs : list shape (len(RFs), 4)
+    RFs : list shape([len(RF electrodes), 4])
         Array of coordinates of RF electrodes in m
-    DCs : list shape (len(DCs), 4)
+    DCs : list shape([len(DC electrodes), 4])
         Array of coordinates of DC electrodes in m
         The order of electrodes must match the order of voltage set and omegas.
-    cover : list shape (2), optional
+    cover : list shape([2]), optional, default is (0,0)
         array [cover_number, cover_height] - number of the terms in
         cover electrode influence expansion (5 is mostly enough) and its height.
 
@@ -217,11 +211,9 @@ def polygon_trap(uid, Omega, rf_voltages, dc_voltages, RFs, DCs, cover=(0, 0)):
 @lammps.fix
 def point_trap(uid, trap, cover=(0, 0)):
     """
-    Simulates an arbitrary point trap. The point trap means a trap of 
-    an arbitrary shape, which is approximated by circle-shaped electrodes, 
-    called points. The points potential is approximated from the fact, that it 
-    has infinitesemal radius, so the smaller are points, the more precise is
-    the simulation (but slower).
+    Simulates an arbitrary point trap. The point trap means a trap of an arbitrary shape, which is approximated by 
+    circle-shaped electrodes, called points. The points potential is approximated from the fact, that it has 
+    infinitesemal radius, so the smaller are points, the more precise is the simulation (but slower).
     
     Parameters
     ----------
@@ -236,7 +228,9 @@ def point_trap(uid, trap, cover=(0, 0)):
             [voltage: voltage of the electrode,
              centers: coordinates of points' centers, 
              areas: areas of each point]
-    cover : [cover_max, cover_height], optional
+    cover : [cover_max, cover_height], optional, default is (0,0)
+        array [cover_number, cover_height] - number of the terms incover electrode influence expansion 
+        (5 is mostly enough) and its height.
     
     Returns
     -------
@@ -372,18 +366,19 @@ def ringtrap(uid, Omega, r, R, r_dc, RF_voltage, dc_voltage, resolution=100, cov
         RF amplitude of the ring
     DC_voltage : float
         DC voltage of the ring
-    resolution : int, optional
-        100 is very high resolution.
+    resolution : int, optional, default is 100
         number of points in the ring design
-    cover : [cover_max, cover_height], optional
-        
+    cover : [cover_max, cover_height], optional, default is (0,0)
+        array [cover_number, cover_height] - number of the terms in cover electrode influence expansion 
+        (5 is mostly enough) and its height.
     Returns
     -------
     odict : str
         updates simulation of a single ring
 
     """
-    s, omega, trap, volt = ring_trap_design(RF_voltage, Omega, r, R, r_dc, dc_voltage, res = resolution, need_coordinates = True, cheight=cover[0], cmax=cover[1])
+    _, trap = ring_trap_design(RF_voltage, Omega, r, R, r_dc, dc_voltage, res=resolution, need_coordinates=True, 
+                               cheight=cover[0], cmax=cover[1])
 
     return point_trap(trap, cover)
 
@@ -392,56 +387,62 @@ def ringtrap(uid, Omega, r, R, r_dc, RF_voltage, dc_voltage, resolution=100, cov
 Shuttling of ions in the trap
 """
 
-def linear_shuttling_voltage(s, x0, d, T, dc_set, shuttlers = 0, N = 4, vmin = -15, vmax = 15, res = 25, L = 1e-6, need_func = False):
+def linear_shuttling_voltage(s, x0, d, T, dc_set, shuttlers=0, N=4, vmin=-15, vmax=15, res=25, L=1e-6, need_func=False, 
+                             freq_coeff=0, freq_ax=[0,1,2]):
     """
-    Performs optimization of voltage sequence on DC electrodes for the linear
-    shuttling, according to the tanh route. Voltage is optimized to maintain 
-    axial secular frequency along the route.
+    Performs optimization of voltage sequence on DC electrodes for the linear shuttling, according to the tanh route. 
+    Voltage is optimized to maintain axial secular frequency along the route.
 
     Parameters
     ----------
     s : electrode.System object
         Surface trap from electrode package
-    x0 : array shape (3)
+    x0 : array shape([3])
         Starting point of the shuttling
     d : float
         distance of the shuttling
     T : float
         Time of the shuttling operation
-    dc_set : list shape (len(DCs))
+    dc_set : list shape([len(DC electrodes)])
         list of starting DC voltages
     shuttlers : list, optional, default is 0
         list of DC electrodes (defined as numbers), used for shuttling
         if ==0 then all dc electrodes participate in shuttling
         if ==[2,4,6] for example, only 2, 4 and 6th electrodes are participating,
         the rest are stationary dc
-    N : int, optional
-        4 means steep slope
+    N : int, optional, default is 4
         parameter in the tanh route definition (see q_tan)
-    vmin : float, optional
-        Minimal allowable DC voltage. The default is -15.
-    vmax : float, optional
-        Maximal allowable DC voltage. The default is 15.
-    res : int, optional
+    vmin : float, optional, default is -15
+        Minimal allowable DC voltage.
+    vmax : float, optional, default is 15
+        Maximal allowable DC voltage. 
+    res : int, optional, default is 25
         Number of steps of the voltage sequence during shuttling time.
-    L : float, optional
+    L : float, optional, default is 1e-6
         Dimension scale of the electrode. The default is 1e-6 which means um.
-    need_func : bool, optional
-        if True, the approximation functions of voltage sequences are provided, 
-        which are used for MD simulation of shuttling
+    need_func : bool, optional, default is False
+        if True, the approximation functions of voltage sequences are provided, which are used for MD simulation of shuttling
+    freq_coeff : float, optional, default is 0
+        If not 0, optimimization will try to minimize secular frequency variations during shuttling. Coefficient 
+        defines the input of the frequency variation to the loss function. If it's too high, optimization will not 
+        succeed for shuttling, if it's too low, frequency variations will be ignored. Usually optimal value is between
+        0.1 and 100, and has to be found manually.
+    freq_ax : list [len up to 3], optional, default is (0,1,2)
+        List of coordinate axes, along which the frequency variations are minimized, specified by index (0, 1, 2).
+        For a single axis it must be, for example [0]. Default is [0,1,2], meaning all three coordinate axes.
 
     Returns
     -------
-    voltage_seq : list shape (len(shuttlers), res+1)
+    voltage_seq : list shape([len(shuttlers), res+1])
         voltage sequences on each shuttler electrode (could be constant)
-    funcs : list of strings shape (len(DCs)), optional
+    funcs : list of strings shape([len(DC electrodes)]), optional
         list of functions in format, used for MD simulation (including stationary DC)
 
     """
     def q_tan(t):
         return np.array([d/2*(np.tanh(N*(2*t-T)/T)/np.tanh(N) + 1), 0, 0])    
     
-    return shuttling_voltage(s, x0, q_tan, T, dc_set, shuttlers, vmin, vmax, res, L, need_func, a = 1)
+    return shuttling_voltage(s, x0, q_tan, T, dc_set, shuttlers, vmin, vmax, res, L, need_func, freq_coeff, freq_ax)
     
 def fitter_tan(t, a, b, c, d):
     return a*np.tanh(b*(t + c)) + d
@@ -449,22 +450,18 @@ def fitter_tan(t, a, b, c, d):
 def fitter_norm(t, a, b, c, d):
     return a*np.exp(b*(t-c)**2) + d
 
-def approx_linear_shuttling(voltage_seq, T, dc_set, shuttlers, res):
+def approx_linear_shuttling(voltage_seq, T, res):
     """
     Approximation of voltage sequences on DC electrodes with analytic functions
 
     Parameters
     ----------
-    voltage_seq : list shape (len(DCs), res+1)
+    voltage_seq : list shape([len(DC electrodes), res+1])
         voltage sequences on each DC electrode (could be constant)
     T : float
         Time of shuttling operation
-    dc_set : list shape (len(DCs))
-        list of starting DC voltages
-    shuttlers : list
-        list of DC electrodes (defined as numbers), used for shuttling
-    res : int, optional
-        Resolution of the voltage sequence definition. The default is 50.
+    res : int
+        Resolution of the voltage sequence definition.
 
     Returns
     -------
@@ -489,19 +486,23 @@ def approx_linear_shuttling(voltage_seq, T, dc_set, shuttlers, res):
             funcs.append('(%5.3f)' % mean)
         else:
             try:
-                popt_tan, pcov_tan = curve_fit(fitter_tan, x_data, seq, [np.abs(dif/2), dif/T, -T/2, mean])
-                tan = np.linalg.norm(seq - fitter_tan(x_data, *popt_tan))
+                with warnings.catch_warnings():
+                    warnings.simplefilter("ignore")
+                    popt_tan, _ = curve_fit(fitter_tan, x_data, seq, [np.abs(dif/2), dif/T, -T/2, mean])
+                    tan = np.linalg.norm(seq - fitter_tan(x_data, *popt_tan))
             except:
                 att += 1
                 tan = 1e6
             try:
-                popt_norm, pcov_norm = curve_fit(fitter_norm, x_data, seq, [np.abs(ampl), -1/2/T, T/2, np.min(seq)])
-                norm = np.linalg.norm(seq - fitter_norm(x_data, *popt_norm))
+                with warnings.catch_warnings():
+                    warnings.simplefilter("ignore")
+                    popt_norm, _ = curve_fit(fitter_norm, x_data, seq, [np.abs(ampl), -1/2/T, T/2, np.min(seq)])
+                    norm = np.linalg.norm(seq - fitter_norm(x_data, *popt_norm))
             except:
                 att +=1
                 norm = 1e6
             if att == 2:
-                sys.exit(f"Failed to fit {i}th electrode. Needs custom curve fitting")
+                warnings.warn(f"Failed to fit {i}th electrode. Needs custom curve fitting")
             
             if tan > norm:
                 funcs.append('((%5.6f) * exp((%5.6f) * (step*dt - (%5.6f))^2) + (%5.6f))' % tuple(popt_norm))
@@ -510,56 +511,88 @@ def approx_linear_shuttling(voltage_seq, T, dc_set, shuttlers, res):
                 
     return funcs
 
-def lossf_shuttle(uset, s, omegas, dots, L, dc_set, shuttlers, a):
-    """
-    Loss function for search of the optimal voltage sequence
+def lossf_shuttle(uset, s, omegas, positions, L, dc_set, shuttlers, freq_coeff, freq_ax):
+    '''
+    Loss function for shuttling optimization
 
-    """
+    Parameters
+    ----------
+    uset : np.array shape([len(shuttlers)])
+        Varying voltage set on shuttling electrodes
+    s : electrode.System object
+        Surface trap from electrode package
+    omegas : np.array shape([len(positions), len(freq_ax)])
+        List of secular frequencies for each considered potential minimum at the begining of operation
+    positions : np.array shape([len(potential minimums), 3])
+        List of potential minimums
+    L : float
+        Dimension scale of the electrode. The default is 1e-6 which means um.
+    dc_set : list shape([len(DC electrodes)])
+        initial voltages on all dc electrodes
+    shuttlers : list
+        list of DC electrodes (defined as numbers), used for shuttling
+        if ==0 then all dc electrodes participate in shuttling
+        if ==[2,4,6] for example, only 2, 4 and 6th electrodes are participating,
+        the rest are stationary dc
+    freq_coeff : float
+        If not 0, optimimization will try to minimize secular frequency variations during shuttling. Coefficient 
+        defines the input of the frequency variation to the loss function. If it's too high, optimization will not 
+        succeed for shuttling, if it's too low, frequency variations will be ignored. Usually optimal value is between
+        0.1 and 100, and has to be found manually.
+    freq_ax : list [len up to 3]
+        List of coordinate axes, along which the frequency variations are minimized, specified by index (0, 1, 2).
+        For a single axis it must be, for example [0]. Default is [0,1,2], meaning all three coordinate axes.
+
+    Returns
+    -------
+    loss : float
+        Quadratic norm of difference between current and desired minimum position. Scaled with norm of difference 
+        between current secular frequency and desired one.
+    '''
     rfss = np.array([0 for el in s if el.rf])
     for c, elec in enumerate(shuttlers):
         dc_set[elec] = uset[c]
     u_set = np.concatenate([rfss, np.array(dc_set)])
     loss = 0
-    attempts = 0
+
     with s.with_voltages(dcs = u_set, rfs = None):
-        for i,x in enumerate(dots):
-            while attempts < 200:
+        if freq_coeff > 0:
+            for i,x in enumerate(positions):
                 try:
-                    try:
-                        xreal = s.minimum(x + 1e-6/L*np.array([(-1)**attempts*attempts/10, 0, 1e-6]), axis=(0, 1, 2), coord=np.identity(3), method="Newton-CG")
-                        break
-                    except:
-                        try:
-                            xreal = s.minimum(x + 1e-6/L*np.array([1e-6, (-1)**attempts*attempts/10, 1e-6]), axis=(0, 1, 2), coord=np.identity(3), method="Newton-CG")
-                            break
-                        except:
-                            xreal = s.minimum(x + 1e-6/L*np.array([1e-6, 1e-6, (-1)**attempts*attempts/10]), axis=(0, 1, 2), coord=np.identity(3), method="Newton-CG")
-                            break
+                    xreal = s.minimum(x*1.001, axis=(0, 1, 2), coord=np.identity(3), method="Newton-CG",
+                                    tol = 1e-9, options = {'maxiter' : 100000})
+                    curv_z, _ = s.modes(xreal,sorted=False)
+                    curv_z = curv_z[[freq_ax]]
                 except:
-                    attempts += 1
-                    xreal = x 
+                    xreal = x * 1.1
+                    curv_z = omegas[i] * 1.1
+                loss += np.sqrt(np.linalg.norm(xreal - x) ** 2 + freq_coeff*L**(-2)*np.linalg.norm(curv_z - omegas[i])**2)
+        else:
+            for i,x in enumerate(positions):
+                try:
+                    xreal = s.minimum(x*1.001, axis=(0, 1, 2), coord=np.identity(3), method="Newton-CG",
+                                    tol = 1e-9, options = {'maxiter' : 100000})
+                except:
+                    xreal = x * 1.1
+                loss += np.linalg.norm(xreal - x)
+            
+    return loss ** 2
 
-            curv_z, mod_dir=s.modes(xreal,sorted=False)
-            loss += np.linalg.norm(xreal - x) + a*L**(-2)*(curv_z[0]-omegas[i])**2
-    return loss
 
-
-def shuttling_voltage(s, starts, routes, T, dc_set, shuttlers = 0, vmin = -15, vmax = 15, res = 50, L = 1e-6, need_func = False, a = 0):
+def shuttling_voltage(s, starts, routes, T, dc_set, shuttlers=0, vmin=-15, vmax=15, res=50, L=1e-6, need_func=False, 
+                      freq_coeff=0, freq_ax=(0,1,2)):
     '''
-    General function for shuttling voltage sequence, which optimizes the voltage
-    sequence on chosen electrode for the (arbitrary 3D) route of 1 ion or 
-    simulataneous varying routes of several different ions (potential wells)
+    General function for shuttling voltage sequence, which optimizes the voltage sequence on chosen electrode for the 
+    (arbitrary 3D) route of 1 ion or simulataneous varying routes of several different ions (potential wells)
 
     Parameters
     ----------
     s : electrode.System object
         Surface trap from electrode package
-    starts : list shape (number of wells, 3)
-        array of initial coordinates of each potential well to be considered
-        may be only one point with shape (3)
-    routes : function(i:int, t:float/np.array)
-        function determining the routes of potential wells in time. Must be in
-        the following form: if only 1 well:
+    starts : list shape([number of wells, 3])
+        Array of initial coordinates of each potential well to be considered. May be only one point with shape([3])
+    routes : callable, function(i:int, t:float/np.array)
+        function determining the routes of potential wells in time. Must be in the following form: if only 1 well:
             def routes(t):
                 return np.array([x(t), y(t), z(t)])
         if 2 or more wells shuttled simultaneously:
@@ -567,11 +600,11 @@ def shuttling_voltage(s, starts, routes, T, dc_set, shuttlers = 0, vmin = -15, v
                 if i == 0:
                     return np.array([x_0(t), y_0(t), z_0(t)])
                 ...
-                if i == j:
+                elif i == j:
                     return np.array([x_j(t), y_j(t), z_j(t)])          
     T : float
         time of shuttling operation
-    dc_set : list shape(len(DCs))
+    dc_set : list shape([len(DC electrodes)])
         initial voltages on all dc electrodes
     shuttlers : list, optional, default is 0
         list of DC electrodes (defined as numbers), used for shuttling
@@ -582,58 +615,87 @@ def shuttling_voltage(s, starts, routes, T, dc_set, shuttlers = 0, vmin = -15, v
         Minimal allowable DC voltage. The default is -15.
     vmax : float, optional
         Maximal allowable DC voltage. The default is 15.
-    res : int, optional
+    res : int, optional, default is 50
         Number of steps of the voltage sequence during shuttling time.
-    L : float, optional
+    L : float, optional, default is 1e-6
         Dimension scale of the electrode. The default is 1e-6 which means um.
-    need_func : bool, optional
+    need_func : bool, optional, default is False
         if True, the approximation functions of voltage sequences on all DC electrodes
         are provided, which are used for MD simulation of shuttling
-    a : float, optional
-        Degree of considering secular frequency varience during the route.
-        The default is 0, meaning no consideration. If it appears during analysis,
-        that the optimized voltage sequence vary frequencies significantly, you
-        can turn it one, but otherwise it just slows the optimization.
+    freq_coeff : float, optional, default is 0
+        If not 0, optimimization will try to minimize secular frequency variations during shuttling. Coefficient 
+        defines the input of the frequency variation to the loss function. If it's too high, optimization will not 
+        succeed for shuttling, if it's too low, frequency variations will be ignored. Usually optimal value is between
+        0.1 and 100, and has to be found manually.
+    freq_ax : list [len up to 3], optional, default is (0,1,2)
+        List of coordinate axes, along which the frequency variations are minimized, specified by index (0, 1, 2).
+        For a single axis it must be, for example [0]. Default is [0,1,2], meaning all three coordinate axes.
 
     Returns
     -------
-    voltage_seq : list shape (len(shuttlers), res+1)
+    voltage_seq : list shape([len(shuttlers), res+1])
         voltage sequences on each shuttler electrode (could be constant)
-    funcs : list of strings shape (len(DCs)), optional
+    funcs : list of strings shape([len(DC electrodes)]), optional
         list of functions in format, used for MD simulation (including stationary DC)
 
     '''
     voltage_seq = []
-    if shuttlers == 0:
+    try:
+        shuttlers[0]
+    except:
         shuttlers = range(len(dc_set))
     try:
         starts[0][0]
     except:
         starts = np.array([starts])
+
     bnds = [(vmin,vmax) for el in shuttlers]
     rfss = np.array([0 for el in s if el.rf])
     u_set = np.concatenate([rfss, np.array(dc_set)])
     wells = len(starts)
-    curves = np.zeros(wells)
+    curves = []
+
     for i,start in enumerate(starts):
         with s.with_voltages(dcs = u_set, rfs = None):
             x1 = s.minimum(np.array(start), axis=(0, 1, 2), coord=np.identity(3), method="Newton-CG")
             curv_z, mod_dir=s.modes(x1,sorted=False)
-            curves[i] = (curv_z[0])
+            curvv = []
+            for ax in freq_ax:
+                curvv.append(curv_z[ax])
+            curves.append(np.array(curvv))
+            
     uset = np.zeros(len(shuttlers))
     for c, elec in enumerate(shuttlers):
         uset[c] = dc_set[elec]
     x = np.zeros((wells, 3))
-    for dt in tqdm(range(res+1), desc='Shuttling optimization'):
-        t = dt*T/res
-        for i,x0 in enumerate(starts):
-            try:
+
+    try:
+        routes(0,0)
+        multiple = True
+    except:
+        multiple = False
+
+    if multiple:
+        for dt in tqdm(range(res+1), desc='Shuttling optimization'):
+            t = dt*T/res
+            for i,x0 in enumerate(starts):
                 x[i] = x0 + routes(i,t)
-            except:
+                
+            newset = minimize(lossf_shuttle, uset, args = (s, curves, x, L, dc_set, shuttlers, freq_coeff, freq_ax), 
+                              tol = 1e-6, bounds = bnds, options = {'maxiter' : 10000})
+            uset = newset.x
+            voltage_seq.append(uset) 
+            
+    else:
+        for dt in tqdm(range(res+1), desc='Shuttling optimization'):
+            t = dt*T/res
+            for i,x0 in enumerate(starts):
                 x[i] = x0 + routes(t)
-        newset = minimize(lossf_shuttle, uset, args = (s, curves, x, L, dc_set, shuttlers, a), tol = 1e-9, bounds = bnds, options = {'maxiter' : 1000000})
-        uset = newset.x
-        voltage_seq.append(uset) 
+                
+            newset = minimize(lossf_shuttle, uset, args = (s, curves, x, L, dc_set, shuttlers, freq_coeff, freq_ax), 
+                              tol = 1e-6, bounds = bnds, options = {'maxiter' : 10000})
+            uset = newset.x
+            voltage_seq.append(uset) 
         
     voltage_seq = np.array(voltage_seq).T
     volt_seq = []
@@ -644,10 +706,11 @@ def shuttling_voltage(s, starts, routes, T, dc_set, shuttlers = 0, vmin = -15, v
             k += 1
         else:
             volt_seq.append(np.array([v]*(res+1)))
+
     volt_seq = np.array(volt_seq)
     
     if need_func:
-        funcs = approx_linear_shuttling(volt_seq, T, dc_set, shuttlers, res)
+        funcs = approx_linear_shuttling(volt_seq, T, res)
         return volt_seq, funcs
     else:
         return volt_seq
@@ -655,9 +718,8 @@ def shuttling_voltage(s, starts, routes, T, dc_set, shuttlers = 0, vmin = -15, v
 @lammps.fix
 def polygon_shuttling(uid, Omega, rf_set, RFs, DCs, shuttlers, cover=(0, 0)):
     """
-    Simulates an arbitrary planar trap with polygonal electrodes
-    and shuttling in this trap. The shuttling is specified by the 
-    voltage sequence on the DC electrodes, in terms of some smooth function V(t).
+    Simulates an arbitrary planar trap with polygonal electrodes and shuttling in this trap. The shuttling is specified
+    by the voltage sequence on the DC electrodes, in terms of some smooth function V(t).
     Any V(t) can be applied to this function. It must be specifyed as a string.
     For example: V(t) = np.exp(-k*t**2) == "exp(-k*(step*dt)^2)",
     If const: V(t) = V == "V"
@@ -666,19 +728,18 @@ def polygon_shuttling(uid, Omega, rf_set, RFs, DCs, shuttlers, cover=(0, 0)):
     ----------
     uid : str
         ions ID, .self parameter
-    Omega : float or list shape len(RFs)
+    Omega : float or list shape([len(RF electrodes])
         array of RF frequencies (or a frequency if they are the same) of each RF electrode
-    rf_set : array shape (len(RFs))
+    rf_set : array shape([len(RF electrodes)])
         Set of the peak voltages on RF electrodes.
-    RFs : list shape (len(RFs), 4)
+    RFs : list shape([len(RF electrodes), 4])
         Array of coordinates of RF electrodes in m
-    DCs : list shape (len(DCs), 4)
+    DCs : list shape([len(DC electrodes), 4])
         Array of coordinates of DC electrodes in m
         The order of electrodes must match the order of voltage set and omegas.
-    shuttlers : list of strings shape (len(DCs))
-        list of strings, representing functions at which voltage on DC electrodes
-        is applied through simulation time
-    cover : list shape (2), optional
+    shuttlers : list of strings shape([len(DC electrodes)])
+        list of strings, representing functions at which voltage on DC electrodes is applied through simulation time
+    cover : list shape([2]), optional, default is (0,0)
         array [cover_number, cover_height] - number of the terms in
         cover electrode influence expansion (5 is mostly enough) and its height.
 
@@ -856,19 +917,16 @@ Design functions for traps.
 
 def circle_packaging(scale, boundary, n, res):
     """
-    Function to almost optimally approximate the given shape (specified by boundary)
-    with circles for a given resolution. Works as follows:
-        the area of scale*scale size is packed with circles by hexagonal
-        packing with resolution res. Then, for nth electrode the shape, specified
-        by boundary() is cutted from the area.
+    Function to almost optimally approximate the given shape (specified by boundary) with circles for a given resolution.
+     Works as follows: the area of scale*scale size is packed with circles by hexagonal packing with resolution res. 
+     Then, for nth electrode the shape, specified by boundary() is cutted from the area.
 
     Parameters
     ----------
     scale : float
         size of packed area
-    boundary : function(n:int, x:list of in plane coordinates [x,y])
-        boundary function for a given electrode's shape. Returns True, is the 
-        point is within boundaries, or False, if not.
+    boundary : callable, function(n:int, x:list of in plane coordinates [x,y])
+        boundary function for a given electrode's shape. Returns True, is the point is within boundaries, or False, if not.
         Example for 2 circle electrodes:
         def boundaries(i, x):
             if i == 0:
@@ -909,298 +967,254 @@ def circle_packaging(scale, boundary, n, res):
     return np.array(ps), np.array(ars)
 
 
-def five_wire_trap_design(Urf, DCtop, DCbottom, cwidth, clength, boardwidth, rftop, rflength, rfbottom, need_coordinates = False, L = 1e-6, patternTop = 1, patternBot = 1, getCoordinate = False, gapped = 0, cheight=0, cmax=0, need_plot = False, save_plot = None):
+def n_wire_trap_design(top_dc, bottom_dc, central_wires, rf_indxs, Urf=0, gap=0, wire_splitting={}, L=1e-6, 
+                     cheight=0, cmax=0, need_coordinates=False, need_plot=False, save_plot=None, figsize=(20,20)):
     '''
-    Elaborate function, designing arbitrary five-wire trap.
+    Initializes the n-wire linear ion trap as *electrode* object. Each dc and rf electrode is labeled by its index, 
+    matching with the voltages, applied to them. Consists of side DC electrodes and central wires, which can be either 
+    DC or RF. Each wire can be separated into individual electrodes.
 
     Parameters
     ----------
-    Urf : float
-        Scaled RF amplitude of the trap. If scaled from SU rf amplitude (Vrf) 
-        as Urf = Vrf*np.sqrt(Z/mass)/(2*L*Omega), where Z - ion's charge in SU,
-        then accounts for pseudopotential approximation.
-    DCtop : list shape (number of electrodes, 2)
-        list of [length (along y-axis), width(along x-axis)] of electrodes on top of the RF line. 
-        Placed in the middle of the rf line.
-    DCbottom : list shape (number of electrodes, 2)
-        list of [length (along y-axis), width(along x-axis)] of electrodes bottom of the RF line. 
-        Placed in the middle of the rf line.
-    cwidth : float
-        Width of the central dc electrode (along y-axis).
-    clength : float
-        Length of the central dc electrode (along x-axis).
-    boardwidth : float
-        Width of the gap between electrodes. Will be filled equally from both electrodes, 
-        sharing this gap, as per House, Analytical model for surface traps.
-    rftop : float
-        Width of the upper rf electrode in the rf line (along y-axis).
-    rflength : float
-        Length of the rf line (along x-axis). If >clength, it will encapsulate the central dc electrode
-    rfbottom : float
-        Width of the lower rf electrode in the rf line (along y-axis).
-    need_coordinates : bool, optional
-        If True, returns the coordinates, scaled by L to SU form, used by polygon_simulation(). The default is False.
-    L : float, optional
+    top_dc : array shape([number of top DC electrodes, 2])
+        list of [x-width, y-width] of rectangular electrodes on top of the central wires. Will be placed from left to right.
+    bottom_dc : array shape([number of bottom DC electrodes, 2])
+        list of [x-width, y-width] of rectangular electrodes bottom of the central wires. Will be placed from left to right.
+    central_wires : array shape([number of central DC electrodes, 2])
+        list of [x-width, y-width] of rectangular central wires. Will be placed from top to bottom. 
+    rf_indxs : list of shape([number of RF electrodes])
+        list of indexes, corresponding to the central wires which are RF electrodes. If contains the index of splitted 
+        wire, all splitted electrodes will be RF. Indexes start with 0, ordered from top to bottom.
+    Urf : float or array of floats shape([number of RF electrodes]), optional, default is 0
+        Scaled RF amplitude of the trap. If scaled from SU rf amplitude (Vrf) as Urf = Vrf*np.sqrt(Z/mass)/(2*L*Omega), 
+        then accounts for pseudopotential approximation. Single Urf is all RF electrodes share the same RF drive, or an 
+        array of individual Urf for each electrode.
+    gap : float, optional, default is 0
+        Uniform gap between the electrodes. If >0, all electrode sizes will be increased by the same gap for accurate 
+        simulation. The same gap, applied to *polygons_to_gds* will produce the drawing with the desired gaps.
+    wire_splitting : dict, optional, default is {}
+        dictionary of the following structure: 
+        {index of wire(int) : [[x-widths of electrodes(float)], [rf_indxs(int, could be empty)]]}
+        separates the specified wire into electrodes of the specified length. The y-width of each such electrode is 
+        the same, as in the original wire. rf_indxs specify which of these electrodes are rf. 
+    L : float, optional, default is 1e-6
         Dimension scale of the electrode. The default is 1e-6 which means um.
-    patternTop : int, optional
-        It will repeat the DCtop electrodes patternTop times. The default is 1.
-    patternBot : int, optional
-        It will repeat the DCbottom electrodes patternBot times. The default is 1.
-    getCoordinate : bool, optional
-        If True, it will create a file with coordinates, considering the gaps, 
-        for GDS file production. The default is False.
-    gapped : float, optional
-        Creates gaps between central dc electrodes and RF line with given width.
-        Should be used only if said gap is very large, so capacitive coupling will not affect the simulation.
-        The default is 0.
-    cheight : float, optional
-        Height of cover electrode - grounded plane above the trap. The default is 0.
-    cmax : int, optional
-        Expansion order for cover electrode. Usually 5 is sufficient for correct calculations. The default is 0.
-    need_plot : bool, optional
-        If True, returns a plot of the trap with specified RF electrode. The default is False.
-    save_plot : str, optional
-        Saves the plot to the file for the provided path.
-        For example: "five-wire_trap.eps" will create this file with the plot.
-        The default is None.
-
+    cheight : float, optional, default is 0
+        Height of cover electrode - grounded plane above the trap.
+    cmax : int, optional, default is 0
+        Expansion order for cover electrode. Usually 5 is sufficient for correct calculations.
+    need_coordinates : bool, optional, default if False
+        If True, returns the coordinates, scaled by L to SU form, used by polygon_simulation(). 
+    need_plot : bool, optional, default is False
+        If True, returns a plot of the trap with specified RF electrode. The default is False. 
+    save_plot : str, optional, default is None
+        If not None, saves the plot under the provided filename.
+    figsize : tuple, optional, default is (20,20)
+        Optional size of the plot. If the electrode labels are too big, try increasing this size. 
+        For more detailed control of the plot reproduce the respective code in the main.
+    
     Returns
     -------
     s : electrode.System object
-        Surface trap from electrode .
-    RF_electrodes : list shape (number of RF electrodes, electrode shape), optional
+        Surface trap from *electrode*.
+    RF_electrodes : list shape([number of RF electrodes, electrode shape]), optional
         returns RF electrodes coordinates in SU for MD simulation.
-    DC_electrodes : list shape (number of DC electrodes, electrode shape), optional
+    DC_electrodes : list shape([number of DC electrodes, electrode shape]), optional
         returns DC electrodes coordinates in SU for MD simulation.
+
     '''
-    clefttop = [-clength / 2, cwidth]
+    #uniform format
+    try:
+        Urf[0]
+    except:
+        Urf = np.ones(len(rf_indxs))*Urf
 
-    c = [[clefttop[0] - boardwidth / 2, clefttop[1] + boardwidth / 2],
-         [clefttop[0] + clength + boardwidth, clefttop[1] + boardwidth / 2],
-         [clefttop[0] + clength + boardwidth, -boardwidth / 2], [clefttop[0] - boardwidth / 2, -boardwidth / 2]]
-    rf_top = [[-rflength / 2, rftop + boardwidth + gapped + clefttop[1]],
-              [rflength / 2, rftop + boardwidth + gapped + clefttop[1]],
-              [rflength / 2, clefttop[1] + boardwidth / 2 + gapped],
-              [-rflength / 2, clefttop[1] + boardwidth / 2 + gapped]]
-    rf_bottom = [[-rflength / 2, boardwidth / 2 + clefttop[1] + gapped],
-                 [clefttop[0] - boardwidth / 2,
-                     clefttop[1] + boardwidth / 2 + gapped],
-                 [clefttop[0] - boardwidth / 2, -boardwidth / 2 - gapped],
-                 [clefttop[0] + boardwidth + clength, -boardwidth / 2 - gapped],
-                 [clefttop[0] + boardwidth + clength,
-                     clefttop[1] + boardwidth / 2 + gapped],
-                 [rflength / 2, clefttop[1] + boardwidth / 2 +
-                     gapped], [rflength / 2, -rfbottom - boardwidth - gapped],
-                 [-rflength / 2, -rfbottom - boardwidth - gapped]]
-    bd = boardwidth
-    DCb = DCbottom
-
-    # define arrays of DCs considering pattern
-    DCtop = DCtop * patternTop
-    DCtop = np.array(DCtop)
-
-    DCb = DCb * patternBot
-    DCb = np.array(DCb)
-
-    # Part, defining top DC electrods
-    n = len(DCtop)
-    # define m -- number of the DC, which will start in x=0
-    m = n // 2
-
-    gapped = 2 * gapped
-
-    # define t -- 3d array containing 2d arrays of top DC electrodes
-    t = [[[0 for i in range(2)] for j in range(4)] for k in range(n)]
-    t = np.array(t)
-
-    # starting point - central electrode, among top DCs. Considering parity of electrode number (i just want it to be BEAUTIFUL)
-    if n % 2 == 0:
-        t[m] = np.array([[-bd / 2, rftop + bd * 3 / 2 + clefttop[1] + DCtop[m][0] + gapped],
-                         [bd / 2 + DCtop[m][1], rftop + bd * 3 /
-                             2 + clefttop[1] + DCtop[m][0] + gapped],
-                         [bd / 2 + DCtop[m][1], rftop + bd + clefttop[1] + gapped],
-                         [-bd / 2, rftop + bd + clefttop[1] + gapped]])
+    for j, wire in enumerate(central_wires):
+        central_wires[j] = np.array(wire) + np.array([gap, gap])
+    wh_len_y = np.sum(central_wires, axis = 0)[1]
+    
+    RF = []
+    DC = []
+    count_rf = 0
+    count_dc = 0
+    electrodes = []
+    if 0 in wire_splitting: 
+        if 0 in rf_indxs:
+            wire_splitting[0][1] = list(np.arange(len(wire_splitting[0][0])))
+        celectrode_coordinates = [[[-central_wires[0][0]/2, wh_len_y/2], 
+                                   [-central_wires[0][0]/2, wh_len_y/2 - central_wires[0][1]], 
+                                   [-central_wires[0][0]/2 + wire_splitting[0][0][0], wh_len_y/2 - central_wires[0][1]], 
+                                   [-central_wires[0][0]/2 + wire_splitting[0][0][0], wh_len_y/2]]]
+        if 0 in wire_splitting[0][1]:
+            st = f'rf[{count_rf}]'
+            count_rf += 1
+            electrodes.append([st, [celectrode_coordinates[-1]]])
+            RF.append(np.array(celectrode_coordinates[-1])*L)
+        else:
+            st = f'dc[{count_dc}]'
+            count_dc += 1
+            electrodes.append([st, [celectrode_coordinates[-1]]])
+            DC.append(np.array(celectrode_coordinates[-1])*L)
+            
+        for k, width in enumerate(wire_splitting[0][0]):
+            if k > 0:
+                celectrode_coordinates.append([[celectrode_coordinates[k-1][3][0], wh_len_y/2], 
+                                               [celectrode_coordinates[k-1][3][0], wh_len_y/2 - central_wires[0][1]], 
+                                               [celectrode_coordinates[k-1][3][0] + wire_splitting[0][0][k],
+                                                wh_len_y/2 - central_wires[0][1]], 
+                                               [celectrode_coordinates[k-1][3][0] + wire_splitting[0][0][k], wh_len_y/2]])
+                if k in wire_splitting[0][1]:
+                    st = f'rf[{count_rf}]'
+                    count_rf += 1
+                    electrodes.append([st, [celectrode_coordinates[-1]]])
+                    RF.append(np.array(celectrode_coordinates[-1])*L)
+                else:
+                    st = f'dc[{count_dc}]'
+                    count_dc += 1
+                    electrodes.append([st, [celectrode_coordinates[-1]]])
+                    DC.append(np.array(celectrode_coordinates[-1])*L)
+                    
     else:
-        t[m] = np.array([[-bd / 2 - DCtop[m][1] / 2, rftop + bd * 3 / 2 + clefttop[1] + DCtop[m][0] + gapped],
-                         [bd / 2 + DCtop[m][1] / 2, rftop + bd * 3 /
-                             2 + clefttop[1] + DCtop[m][0] + gapped],
-                         [bd / 2 + DCtop[m][1] / 2, rftop +
-                             bd + clefttop[1] + gapped],
-                         [-bd / 2 - DCtop[m][1] / 2, rftop + bd + clefttop[1] + gapped]])
+        celectrode_coordinates = [[[-central_wires[0][0]/2, wh_len_y/2], 
+                                   [-central_wires[0][0]/2, wh_len_y/2 - central_wires[0][1]], 
+                                   [central_wires[0][0]/2, wh_len_y/2 - central_wires[0][1]], 
+                                   [central_wires[0][0]/2, wh_len_y/2]]]
+        if 0 in rf_indxs:
+            st = f'rf[{count_rf}]'
+            count_rf += 1
+            electrodes.append([st, [celectrode_coordinates[-1]]])
+            RF.append(np.array(celectrode_coordinates[-1])*L)
+        else:
+            st = f'dc[{count_dc}]'
+            count_dc += 1
+            electrodes.append([st, [celectrode_coordinates[-1]]])
+            DC.append(np.array(celectrode_coordinates[-1])*L)
+    for j, wire in enumerate(central_wires):
+        if j > 0:
+            if j in wire_splitting:
+                if j in rf_indxs:
+                    wire_splitting[j][1] = list(np.arange(len(wire_splitting[j][0])))
+                for k, width in enumerate(wire_splitting[j][0]):
+                    if k == 0:
+                        celectrode_coordinates.append([[-wire[0]/2, celectrode_coordinates[-1][1][1]], 
+                                                       [-wire[0]/2, celectrode_coordinates[-1][1][1] - wire[1]], 
+                                                       [-wire[0]/2 + wire_splitting[j][0][0], 
+                                                        celectrode_coordinates[-1][1][1] - wire[1]], 
+                                                       [-wire[0]/2 + wire_splitting[j][0][0], celectrode_coordinates[-1][1][1]]])
+                        if k in wire_splitting[j][1]:
+                            st = f'rf[{count_rf}]'
+                            count_rf += 1
+                            electrodes.append([st, [celectrode_coordinates[-1]]])
+                            RF.append(np.array(celectrode_coordinates[-1])*L)
+                        else:
+                            st = f'dc[{count_dc}]'
+                            count_dc += 1
+                            electrodes.append([st, [celectrode_coordinates[-1]]])
+                            DC.append(np.array(celectrode_coordinates[-1])*L)
+                    if k > 0:
+                        celectrode_coordinates.append([[celectrode_coordinates[-1][3][0], celectrode_coordinates[-1][3][1]], 
+                                                       [celectrode_coordinates[-1][3][0], celectrode_coordinates[-1][3][1] - wire[1]], 
+                                                       [celectrode_coordinates[-1][3][0] + wire_splitting[j][0][k], 
+                                                        celectrode_coordinates[-1][3][1] - wire[1]], 
+                                                       [celectrode_coordinates[-1][3][0] + wire_splitting[j][0][k], 
+                                                        celectrode_coordinates[-1][3][1]]])
+                        if k in wire_splitting[j][1]:
+                            st = f'rf[{count_rf}]'
+                            count_rf += 1
+                            electrodes.append([st, [celectrode_coordinates[-1]]])
+                            RF.append(np.array(celectrode_coordinates[-1])*L)
+                        else:
+                            st = f'dc[{count_dc}]'
+                            count_dc += 1
+                            electrodes.append([st, [celectrode_coordinates[-1]]])
+                            DC.append(np.array(celectrode_coordinates[-1])*L)
+            else:
+                celectrode_coordinates.append([[-wire[0]/2, celectrode_coordinates[-1][1][1]], 
+                                              [-wire[0]/2, celectrode_coordinates[-1][1][1] - wire[1]], 
+                                              [wire[0]/2, celectrode_coordinates[-1][1][1] - wire[1]], 
+                                              [wire[0]/2, celectrode_coordinates[-1][1][1]]])
+                if j in rf_indxs:
+                    st = f'rf[{count_rf}]'
+                    count_rf += 1
+                    electrodes.append([st, [celectrode_coordinates[-1]]])
+                    RF.append(np.array(celectrode_coordinates[-1])*L)
+                else:
+                    st = f'dc[{count_dc}]'
+                    count_dc += 1
+                    electrodes.append([st, [celectrode_coordinates[-1]]])
+                    DC.append(np.array(celectrode_coordinates[-1])*L)
+        
+    RF = np.array(RF)
+    DCc = np.array(DC)
 
-    # adding electrodes to the right of central DC
-    for k in range(m, n - 1):
-        t[k + 1] = np.array([t[k][1] + np.array([0, DCtop[k + 1][0] - DCtop[k][0]]),
-                             t[k][1] + np.array([bd + DCtop[k + 1]
-                                                [1], DCtop[k + 1][0] - DCtop[k][0]]),
-                             t[k][2] + np.array([bd + DCtop[k + 1][1], 0]), t[k][2]])
+    t_len = np.sum(top_dc, axis=0)[0]
+    electrode_coordinates = [[[-t_len/2, wh_len_y/2], 
+                              [-t_len/2 + top_dc[0][0], wh_len_y/2],
+                              [-t_len/2 + top_dc[0][0], wh_len_y/2 + top_dc[0][1]], 
+                              [-t_len/2, wh_len_y/2 + top_dc[0][1]]]]
+    for j, elec in enumerate(top_dc):
+        if j > 0:
+            electrode_coordinates.append([[electrode_coordinates[j-1][1][0], electrode_coordinates[j-1][1][1]], 
+                                          [electrode_coordinates[j-1][1][0] + elec[0], electrode_coordinates[j-1][1][1]], 
+                                          [electrode_coordinates[j-1][1][0] + elec[0], electrode_coordinates[j-1][1][1] + elec[1]], 
+                                          [electrode_coordinates[j-1][1][0], electrode_coordinates[j-1][1][1] + elec[1]]])
+        st = f'dc[{count_dc}]'
+        count_dc += 1
+        electrodes.append([st, [electrode_coordinates[-1]]])
+    electrode_coordinates = np.array(electrode_coordinates)*L
+    DC = electrode_coordinates
 
-    # adding electrodes to the left
-    for k in range(1, m + 1):
-        r = m - k
-        t[r] = np.array([t[r + 1][0] + np.array([-bd - DCtop[r][1], DCtop[r][0] - DCtop[r + 1][0]]),
-                         t[r + 1][0] +
-                         np.array([0, DCtop[r][0] - DCtop[r + 1][0]]),
-                         t[r + 1][3], t[r + 1][3] + np.array([-bd - DCtop[r][1], 0])])
+    b_len = np.sum(bottom_dc, axis=0)[0]
+    electrode_coordinates = [[[-b_len/2, -wh_len_y/2], 
+                              [-b_len/2, -wh_len_y/2 - bottom_dc[0][1]],
+                              [-b_len/2 + bottom_dc[0][0], -wh_len_y/2 - bottom_dc[0][1]], 
+                              [-b_len/2 + bottom_dc[0][0], -wh_len_y/2]]]
+    for j, elec in enumerate(bottom_dc):
+        if j > 0:
+            electrode_coordinates.append([[electrode_coordinates[j-1][3][0], electrode_coordinates[j-1][3][1]], 
+                                          [electrode_coordinates[j-1][3][0], electrode_coordinates[j-1][3][1] - elec[1]], 
+                                          [electrode_coordinates[j-1][3][0] + elec[0], electrode_coordinates[j-1][3][1] - elec[1]], 
+                                          [electrode_coordinates[j-1][3][0] + elec[0], electrode_coordinates[j-1][3][1]]])
+        st = f'dc[{count_dc}]'
+        count_dc += 1
+        electrodes.append([st, [electrode_coordinates[-1]]])
+    electrode_coordinates = np.array(electrode_coordinates)*L
+    DC = np.concatenate([DC, electrode_coordinates])
+    DC = np.concatenate([DCc, DC])
 
-    # Part for bottom DCs
-    nb = len(DCb)
-    m = nb // 2
-    b = [[[0 for i in range(2)] for j in range(4)] for k in range(nb)]
-    b = np.array(b)
+    electrodes_n = []
+    for i in range(count_rf):
+        st = f'rf[{i}]'
+        for el in electrodes:
+            if el[0] == st:
+                electrodes_n.append(el)
+    
+    for i in range(count_dc):
+        st = f'dc[{i}]'
+        for el in electrodes:
+            if el[0] == st:
+                electrodes_n.append(el)
+            
 
-    # starting electrode
-    if nb % 2 == 0:
-        b[m] = np.array(
-            [[-bd / 2, -rfbottom - boardwidth - gapped], [bd / 2 + DCb[m][1], -rfbottom - boardwidth - gapped],
-             [bd / 2 + DCb[m][1], -rfbottom - bd * 3 / 2 - DCb[m][0] - gapped],
-             [-bd / 2, -rfbottom - bd * 3 / 2 - DCb[m][0] - gapped]])
-    else:
-        b[m] = np.array([[-bd / 2 - DCb[m][1] / 2, -rfbottom - boardwidth - gapped],
-                         [bd / 2 + DCb[m][1] / 2, -rfbottom - boardwidth - gapped],
-                         [bd / 2 + DCb[m][1] / 2, -rfbottom -
-                             bd * 3 / 2 - DCb[m][0] - gapped],
-                         [-bd / 2 - DCb[m][1] / 2, -rfbottom - bd * 3 / 2 - DCb[m][0] - gapped]])
-
-    # Adding DCs. The same algorythm exept sign y-ax
-    for k in range(m, nb - 1):
-        b[k + 1] = np.array([b[k][1] + np.array([0, 0]), b[k][1] + np.array([bd + DCb[k + 1][1], 0]),
-                             b[k][2] + np.array([bd + DCb[k + 1]
-                                                [1], -DCb[k + 1][0] + DCb[k][0]]),
-                             b[k][2] + np.array([0, -DCb[k + 1][0] + DCb[k][0]])])
-
-    for k in range(1, m + 1):
-        r = m - k
-        b[r] = np.array([b[r + 1][0] + np.array([-bd - DCb[r][1], 0]), b[r + 1][0] + np.array([0, 0]),
-                         b[r + 1][3] +
-                         np.array([0, -DCb[r][0] + DCb[r + 1][0]]),
-                         b[r + 1][3] + np.array([-bd - DCb[r][1], -DCb[r][0] + DCb[r + 1][0]])])
-
-    # Reverse every electrode for correct calculation
-    rf_top = rf_top[::-1]
-    rf_bottom = rf_bottom[::-1]
-    c = c[::-1]
-    for i in range(n):
-        t[i] = t[i][::-1]
-    for i in range(nb):
-        b[i] = b[i][::-1]
-
-    # Creating array of electrodes with names
-    electrodes = [
-        (" ", [rf_top,
-                rf_bottom])]
-    for i in range(n):
-        st = "t[" + str(i + 1) + "]"
-        electrodes.append([st, [t[i]]])
-    for i in range(nb):
-        st = "b[" + str(i + 1) + "]"
-        electrodes.append([st, [b[i]]])
-    electrodes.append(["c", [c]])
-
-    # Polygon approach. All DCs are 0 for nown
+    # Polygon approach. All DCs are 0 for now
     s = System([PolygonPixelElectrode(cover_height=cheight, cover_nmax=cmax, name=n, paths=map(np.array, p))
-                for n, p in electrodes])
-    s[" "].rf = Urf
+                for n, p in electrodes_n])
 
-    for i in range(n):
-        st = "t[" + str(i + 1) + "]"
-        s[st].dc = 0
-    for i in range(nb):
-        st = "b[" + str(i + 1) + "]"
-        s[st].dc = 0
-    s["c"].dc = 0
-
-    # Exact coordinates for lion
-    elec = [
-        ("", [np.array(rf_top) * L,
-                np.array(rf_bottom) * L])]
-    for i in range(n):
-        st = "t[" + str(i + 1) + "]"
-        elec.append([st, [np.array(t[i]) * L]])
-    for i in range(nb):
-        st = "b[" + str(i + 1) + "]"
-        elec.append([st, [np.array(b[i]) * L]])
-    elec.append(["c", [np.array(c) * L]])
-
-    # Part of getting coordinates of electrodes
-    if getCoordinate:
-        # once again to add gaps properly, lol
-        rf_top = rf_top[::-1]
-        rf_bottom = rf_bottom[::-1]
-        c = c[::-1]
-        for i in range(n):
-            t[i] = t[i][::-1]
-        for i in range(nb):
-            b[i] = b[i][::-1]
-
-        for i in range(n):
-            # moves to the left on the boardwidth/2
-            t[i][0][0] = t[i][0][0] + bd / 2
-            t[i][1][0] = t[i][1][0] - bd / 2  # to the right
-            t[i][2][0] = t[i][2][0] - bd / 2
-            # moves up as C-point of electrode
-            t[i][2][1] = t[i][2][1] + bd / 2
-            t[i][3][0] = t[i][3][0] + bd / 2
-            t[i][3][1] = t[i][3][1] + bd / 2
-        for i in range(nb):
-            # moves to the left on the boardwidth/2
-            b[i][0][0] = b[i][0][0] + bd / 2
-            b[i][1][0] = b[i][1][0] - bd / 2  # to the right
-            b[i][2][0] = b[i][2][0] - bd / 2
-            b[i][0][1] = b[i][0][1] - bd / 2
-            b[i][3][0] = b[i][3][0] + bd / 2
-            b[i][1][1] = b[i][1][1] - bd / 2
-        c[0][0] = c[0][0] + bd / 2
-        c[0][1] = c[0][1] - bd / 2
-        c[1][0] = c[1][0] - bd / 2
-        c[1][1] = c[1][1] - bd / 2
-        c[2][0] = c[2][0] - bd / 2
-        c[2][1] = c[2][1] + bd / 2
-        c[3][0] = c[3][0] + bd / 2
-        c[3][1] = c[3][1] + bd / 2
-        rf_top[0][1] = rf_top[0][1] - bd / 2
-        rf_top[1][1] = rf_top[1][1] - bd / 2
-        rf_top[2][1] = rf_top[2][1] + bd / 2
-        rf_top[3][1] = rf_top[3][1] + bd / 2
-        # for rf_top and rf_bottom to be connected
-        rf_bottom[0][1] = rf_bottom[0][1] + bd / 2
-        rf_bottom[1][1] = rf_bottom[1][1] + bd / 2
-        rf_bottom[1][0] = rf_bottom[1][0] - bd / 2
-        rf_bottom[2][1] = rf_bottom[2][1] - bd / 2
-        rf_bottom[2][0] = rf_bottom[2][0] - bd / 2
-        rf_bottom[3][0] = rf_bottom[3][0] + bd / 2
-        rf_bottom[3][1] = rf_bottom[3][1] - bd / 2
-        rf_bottom[4][1] = rf_bottom[4][1] + bd / 2
-        rf_bottom[4][0] = rf_bottom[4][0] + bd / 2
-        rf_bottom[5][1] = rf_bottom[5][1] + bd / 2
-        rf_bottom[6][1] = rf_bottom[6][1] + bd / 2
-        rf_bottom[7][1] = rf_bottom[7][1] + bd / 2
-
-        # array of coordinates with names
-        coordinates = [
-            ("RF", [rf_top,
-                    rf_bottom])]
-        for i in range(n):
-            st = "t[" + str(i + 1) + "]"
-            coordinates.append([st, [t[i]]])
-        for i in range(nb):
-            st = "b[" + str(i + 1) + "]"
-            coordinates.append([st, [b[i]]])
-        coordinates.append(["c", [c]])
-
-        # Writes them in a file
-        with open('coordinates.txt', 'w') as f:
-            for item in coordinates:
-                f.write(f'{item}\n')
+    if len(Urf) != count_rf:
+        warnings.warn('Provided RF voltages don\'t match RF electrodes')
+    
+    for i in range(count_rf):
+        s[f'rf[{i}]'].rf = Urf[i]
 
     # creates a plot of electrode
     if need_plot:
-        fig, ax = plt.subplots(1, 2, figsize=(60, 60))
+        fig, ax = plt.subplots(1, 2, figsize=figsize)
         s.plot(ax[0])
         s.plot_voltages(ax[1], u=s.rfs)
-        xmax = rflength * 2 / 3
-        ymaxp = (np.max(DCtop) + rftop + clefttop[1]) * 1.2
-        ymaxn = (np.max(DCbottom) + rfbottom) * 1.2
+        # u = s.rfs sets the voltage-type for the voltage plot to RF-voltages (DC are not shown)
+        xmax = np.max(central_wires, axis = 0)[0]/2*1.2
+        ymaxp = (np.max(top_dc, axis=0)[1] + wh_len_y/2) * 1.2
+        ymaxn = (np.max(bottom_dc, axis=0)[1] + wh_len_y/2) * 1.2
         ax[0].set_title("colour")
         ax[1].set_title("rf-voltages")
         for axi in ax.flat:
@@ -1210,53 +1224,84 @@ def five_wire_trap_design(Urf, DCtop, DCbottom, cwidth, clength, boardwidth, rft
         if save_plot:
             plt.tight_layout()
             plt.savefig(save_plot)
+            
     if need_coordinates:
-        RF_electrodes=[]
-        for iterr in range(2):
-            RF_electrodes.append(elec[0][1][iterr])
-        DC_electrodes = []
-        for ite in range(n + nb + 1):
-            DC_electrodes.append(elec[ite + 1][1][0])
-        return s, RF_electrodes, DC_electrodes
-
+        return s, RF, DC
     else:
         return s
 
+def five_wire_trap_design(Urf, top_dc, bottom_dc, top_rf, bottom_rf, central_dc, gap=0, L=1e-6, 
+                          cheight=0, cmax=0, need_coordinates=False, need_plot=False, save_plot=None, figsize=(20,20)):
+    '''
+    Subroutine to initialize simple five-wire trap as *electrode* object.
 
-def ring_trap_design(Urf, Omega, r, R, r_dc = 0, v_dc = 0, res = 100, need_coordinates = False, need_plot = False, cheight=0, cmax=0, save_plot = None):
+    Parameters
+    ----------
+    Urf : float
+        Scaled RF amplitude of the trap. If scaled from SU rf amplitude (Vrf) as Urf = Vrf*np.sqrt(Z/mass)/(2*L*Omega), 
+        then accounts for pseudopotential approximation.
+    top_dc : array shape([number of top DC electrodes, 2])
+        list of [x-width, y-width] of rectangular electrodes on top of the central wires. Will be placed from left to right.
+    bottom_dc : array shape([number of bottom DC electrodes, 2])
+        list of [x-width, y-width] of rectangular electrodes bottom of the central wires. Will be placed from left to right.
+    top_rf : array shape([2])
+        [x-width, y-width] of rectangular RF electrode on top.
+    bottom_rf : array shape([2])
+        [x-width, y-width] of rectangular RF electrode at bottom.
+    central_dc : array shape([2])
+        [x-width, y-width] of rectangular central DC electrode.
+    *kwargs :
+        Optional parameters from *n_wire_trap_design* exculding wire_splitting
+
+    Returns
+    -------
+    s : electrode.System object
+        Surface trap from *electrode*.
+    RF_electrodes : list shape([number of RF electrodes, electrode shape]), optional
+        returns RF electrodes coordinates in SU for MD simulation.
+    DC_electrodes : list shape([number of DC electrodes, electrode shape]), optional
+        returns DC electrodes coordinates in SU for MD simulation.
+    '''
+    rf_indxs = [0,2]
+    central_wires = [top_rf, central_dc, bottom_rf]
+    
+    return n_wire_trap_design(top_dc, bottom_dc, central_wires, rf_indxs, Urf=[Urf, Urf], gap=gap, wire_splitting={}, 
+                              L=L, cheight=cheight, cmax=cmax, need_coordinates=need_coordinates, need_plot=need_plot, 
+                              save_plot=save_plot, figsize=figsize)
+
+
+def ring_trap_design(Urf, Omega, r, R, r_dc=0, v_dc=0, res=100, need_coordinates=False, need_plot=False, cheight=0,  
+                     cmax=0, save_plot=None, figsize=(13,5)):
     '''
     Function for designing the ring RF trap with (optionally) central DC electrode
 
     Parameters
     ----------
     Urf : float
-        Scaled RF amplitude of the trap. If scaled from SU rf amplitude (Vrf) 
-        as Urf = Vrf*np.sqrt(Z/mass)/(2*L*Omega), where Z - ion's charge in SU,
-        then accounts for pseudopotential approximation.
+        Scaled RF amplitude of the trap. If scaled from SU rf amplitude (Vrf) as Urf = Vrf*np.sqrt(Z/mass)/(2*L*Omega), 
+        where Z - ion's charge in SU, then accounts for pseudopotential approximation.
     Omega : float
         RF frequency of the trap.
     r : float
         inner radius of the electrode ring in SU.
     R : float
         outter radius of the electrode ring in SU.
-    r_dc : float, optional
-        radius of central DC circled electrode. The default is 0.
-    v_dc : float, optional
-        Voltage of dc electrode. The default is 0.
-    res : int, optional
-        Resolution of the trap. The default is 100.
-    need_coordinates : bool, optional
-        If True, returns "trap" object for point_trap() simulation. The default is False.
-    need_plot : bool, optional
-        If True, returns a plot of the trap, with RF and DC electrode voltages separately. The default is False.
-    cheight : float, optional
-        Height of cover electrode - grounded plane above the trap. The default is 0.
-    cmax : int, optional
-        Expansion order for cover electrode. Usually 5 is sufficient for correct calculations. The default is 0.
-    save_plot : str, optional
-        Saves the plot to the file for the provided path.
-        For example: "five-wire_trap.eps" will create this file with the plot.
-        The default is None.
+    r_dc : float, optional, default is 0
+        radius of central DC circled electrode. 
+    v_dc : float, optional, default is 0
+        Voltage of dc electrode. 
+    res : int, optional, default is 100
+        Resolution of the trap.
+    need_coordinates : bool, optional, default is False
+        If True, returns "trap" object for point_trap() simulation.
+    need_plot : bool, optional, default is False
+        If True, returns a plot of the trap, with RF and DC electrode voltages separately.
+    cheight : float, optional, default is 0
+        Height of cover electrode - grounded plane above the trap. 
+    cmax : int, optional, default is 0
+        Expansion order for cover electrode. Usually 5 is sufficient for correct calculations. 
+    save_plot : str, optional, default is None
+        If not None, saves the plot under the provided filename.
 
     Returns
     -------
@@ -1291,24 +1336,24 @@ def ring_trap_design(Urf, Omega, r, R, r_dc = 0, v_dc = 0, res = 100, need_coord
     dc_voltages = [v_dc]
     scale = R*1.5
     
-    return point_trap_design(frequencies, rf_voltages, dc_voltages, ring_boundary, scale, res, need_coordinates = need_coordinates, need_plot = need_plot, cheight=cheight, cmax=cmax, save_plot = save_plot)
+    return point_trap_design(frequencies, rf_voltages, dc_voltages, ring_boundary, scale, res, need_coordinates=need_coordinates, 
+                             need_plot=need_plot, cheight=cheight, cmax=cmax, save_plot=save_plot, figsize=figsize)
 
-def point_trap_design(frequencies, rf_voltages, dc_voltages, boundaries, scale, resolution, need_coordinates = False, need_plot = False, cheight=0, cmax=0, save_plot = None):
+def point_trap_design(frequencies, rf_voltages, dc_voltages, boundaries, scale, resolution, need_coordinates=False, 
+                      need_plot=False, cheight=0, cmax=0, save_plot=None, figsize = (13,5)):
     '''
-    Function for designing arbitrarily shape point trap.
-    Each electrode shape is determined by provided boundary.
+    Function for designing arbitrarily shape point trap. Each electrode shape is determined by provided boundary.
 
     Parameters
     ----------
-    frequencies : float or list shape len(RFs)
+    frequencies : float or list shape([len(RF electrodes)])
         array of RF frequencies (or a frequency if they are the same) of each RF electrode
-    rf_voltages : array shape (len(RFs))
+    rf_voltages : array shape([len(RF electrode)])
         Set of the peak voltages on RF electrodes.
-    dc_voltages : array shape (len(DCs))
+    dc_voltages : array shape([len(DC electrodes]))
         Set of the voltages on DC electrodes.
-    boundary : function(n:int, x:list of in plane coordinates [x,y])
-        boundary function for a given electrode's shape. Returns True, is the 
-        point is within boundaries, or False, if not.
+    boundary : callable, function(n:int, x:list of in plane coordinates [x,y])
+        boundary function for a given electrode's shape. Returns True, is the point is within boundaries, or False, if not.
         Example for 2 circle electrodes:
         def boundaries(i, x):
             if i == 0:
@@ -1323,20 +1368,18 @@ def point_trap_design(frequencies, rf_voltages, dc_voltages, boundaries, scale, 
                     return False
     scale : float
         size of the trap will be scale*scale.
-    resolution : int, optional
-        Resolution of the trap. The default is 100.
-    need_coordinates : bool, optional
-        If True, returns "trap" object for point_trap() simulation. The default is False.
-    need_plot : bool, optional
-        If True, returns a plot of the trap, with RF and DC electrode voltages separately. The default is False.
-    cheight : float, optional
-        Height of cover electrode - grounded plane above the trap. The default is 0.
-    cmax : int, optional
-        Expansion order for cover electrode. Usually 5 is sufficient for correct calculations. The default is 0.
-    save_plot : str, optional
-        Saves the plot to the file for the provided path.
-        For example: "five-wire_trap.eps" will create this file with the plot.
-        The default is None.
+    resolution : int, optional, default is 100
+        Resolution of the trap.
+    need_coordinates : bool, optional, default is False
+        If True, returns "trap" object for point_trap() simulation.
+    need_plot : bool, optional, default is False
+        If True, returns a plot of the trap, with RF and DC electrode voltages separately.
+    cheight : float, optional, default is 0
+        Height of cover electrode - grounded plane above the trap. 
+    cmax : int, optional, default is 0
+        Expansion order for cover electrode. Usually 5 is sufficient for correct calculations. 
+    save_plot : str, optional, default is None
+        If not None, saves the plot under the provided filename.
 
     Returns
     -------
@@ -1421,7 +1464,7 @@ def point_trap_design(frequencies, rf_voltages, dc_voltages, boundaries, scale, 
     
     if need_plot:
         if len(dc_voltages)>0:
-            fig, ax = plt.subplots(1,2,figsize=(13, 5))
+            fig, ax = plt.subplots(1,2,figsize=figsize)
             s.plot_voltages(ax[0], u=s.rfs)
             ax[0].set_xlim((-scale, scale))
             ax[0].set_ylim((-scale, scale))
@@ -1446,7 +1489,7 @@ def point_trap_design(frequencies, rf_voltages, dc_voltages, boundaries, scale, 
                 plt.savefig(save_plot, bbox_inches='tight')
             
         else:
-            fig, ax = plt.subplots(1,2,figsize=(11.5, 5))
+            fig, ax = plt.subplots(1,2,figsize=figsize)
             s.plot_voltages(ax[0], u=s.rfs)
             ax[0].set_xlim((-scale, scale))
             ax[0].set_ylim((-scale, scale))
@@ -1466,257 +1509,33 @@ def point_trap_design(frequencies, rf_voltages, dc_voltages, boundaries, scale, 
     else:
         return s
 
-
-def n_rf_trap_design(Urf, DCtop, DCbottom, cwidth, rfwidth, rflength, n_rf=1, L = 1e-6, patternTop=1,
-              patternBot=1, cheight=0, cmax=0, need_coordinates = False, need_plot = False, save_plot = None):
+def polygons_from_gds(gds_lib, L=1e-6, cheight=0, cmax=0, need_coordinates=True, need_plot=True, save_plot=None):
     '''
-    Function for designing the surface trap, similar to five-wire trap, 
-    but with n_rf RF electrodes on each side of the central one.
-
-    Parameters
-    ----------
-    Urf : float
-        Scaled RF amplitude of the trap. If scaled from SU rf amplitude (Vrf) 
-        as Urf = Vrf*np.sqrt(Z/mass)/(2*L*Omega), where Z - ion's charge in SU,
-        then accounts for pseudopotential approximation.
-    DCtop : list shape (number of electrodes, 2)
-        list of [length (along y-axis), width(along x-axis)] of electrodes on top of the RF line. 
-        Placed in the middle of the rf line.
-    DCbottom : list shape (number of electrodes, 2)
-        list of [length (along y-axis), width(along x-axis)] of electrodes bottom of the RF line. 
-        Placed in the middle of the rf line.
-    cwidth : float
-        Width of the central dc electrode (along y-axis).
-    rfwidth : list of shape (n_rf, 2)
-        List of widths of each rf electrode in the rf line (along y-axis),
-        starting from closer to central electrodes, like [[width_upper, width_lower],...]
-    rflength : float
-        Length of the rf line (along x-axis). Equal to clength.
-    n_rf : int, optional
-            Number of rf electrodes on each side of the central dc electrode. 
-            The default is 1, where it is just a five-wire trap
-    L : float, optional
-        Dimension scale of the electrode. The default is 1e-6 which means um.
-    patternTop : int, optional
-        It will repeat the DCtop electrodes patternTop times. The default is 1.
-    patternBot : int, optional
-        It will repeat the DCbottom electrodes patternBot times. The default is 1.
-    cheight : float, optional
-        Height of cover electrode - grounded plane above the trap. The default is 0.
-    cmax : int, optional
-        Expansion order for cover electrode. Usually 5 is sufficient for correct calculations. The default is 0.
-    need_coordinates : bool, optional
-        If True, returns the coordinates, scaled by L to SU form, used by polygon_simulation(). The default is False.
-    need_plot : bool, optional
-        If True, returns a plot of the trap with specified RF electrode. The default is False.
-    save_plot : str, optional
-        Saves the plot to the file for the provided path.
-        For example: "five-wire_trap.eps" will create this file with the plot.
-        The default is None.
-
-    Returns
-    -------
-    s : electrode.System object
-        Surface trap from electrode .
-    RF_electrodes : list shape (number of RF electrodes, electrode shape), optional
-        returns RF electrodes coordinates in SU for MD simulation.
-    DC_electrodes : list shape (number of DC electrodes, electrode shape), optional
-        returns DC electrodes coordinates in SU for MD simulation.
-
-    '''
-    c = [[-rflength/2, 0], [rflength/2, 0],
-         [rflength/2, cwidth], [-rflength/2, cwidth]]
-    RF = []
-    electrodes = []
-    for i in range(n_rf):
-        tops = 0
-        bots = 0
-        for k in range(i):
-            tops += rfwidth[k][0]
-            bots += rfwidth[k][1]
-        rf_top = [[-rflength/2, cwidth+tops], [rflength/2, cwidth+tops],
-                  [rflength/2, cwidth+tops+rfwidth[i][0]], [-rflength/2, cwidth+tops+rfwidth[i][0]]]
-        rf_bottom = [[-rflength / 2,  -bots-rfwidth[i][1]], [rflength / 2, -bots-rfwidth[i][1]],
-                     [rflength / 2, -bots], [-rflength / 2, -bots]]
-        st = 'rf' + str(i)+'u'
-        electrodes.append([st, [rf_top]])
-        st = 'rf' + str(i)+'d'
-        electrodes.append([st, [rf_bottom]])
-        RF.append(np.array(rf_top)*L)
-        RF.append(np.array(rf_bottom) * L)
-    # define arrays of DCs considering pattern
-    pt = patternTop
-    DCtop = DCtop * pt
-    DCtop = np.array(DCtop)
-    pb = patternBot
-    DCb = DCbottom
-    DCb = DCb * pb
-    DCb = np.array(DCb)
-
-    # Part, defining top DC electrods
-    n = len(DCtop)
-    # define m -- number of the DC, which will start in x=0
-    m = n // 2
-
-    # define t -- 3d array containing 2d arrays of top DC electrodes
-    t = [[[0 for i in range(2)] for j in range(4)] for k in range(n)]
-    t = np.array(t)
-    lenrf_top = 0
-    lenrf_bot = 0
-    for i in range(n_rf):
-        lenrf_top += rfwidth[i][0]
-        lenrf_bot += rfwidth[i][1]
-    
-    DC = []
-    if n % 2 == 0:
-        t[m] = np.array([[0, lenrf_top+cwidth + DCtop[m][0]],
-                         [DCtop[m][1], lenrf_top+cwidth + DCtop[m][0]],
-                         [DCtop[m][1], lenrf_top+cwidth],
-                         [0, lenrf_top+cwidth]])
-    else:
-        t[m] = np.array([[- DCtop[m][1] / 2, lenrf_top+cwidth + DCtop[m][0]],
-                         [+ DCtop[m][1] / 2, lenrf_top+cwidth + DCtop[m][0]],
-                         [+ DCtop[m][1] / 2, lenrf_top+cwidth],
-                         [- DCtop[m][1] / 2, lenrf_top+cwidth]])
-
-    # adding electrodes to the right of central DC
-    for k in range(m, n - 1):
-        t[k + 1] = np.array([t[k][1] + np.array([0, DCtop[k + 1][0] - DCtop[k][0]]),
-                             t[k][1] + np.array([DCtop[k + 1][1],
-                                                DCtop[k + 1][0] - DCtop[k][0]]),
-                             t[k][2] + np.array([DCtop[k + 1][1], 0]), t[k][2]])
-
-    # adding electrodes to the left
-    for k in range(1, m + 1):
-        r = m - k
-        t[r] = np.array([t[r + 1][0] + np.array([- DCtop[r][1], DCtop[r][0] - DCtop[r + 1][0]]),
-                         t[r + 1][0] +
-                         np.array([0, DCtop[r][0] - DCtop[r + 1][0]]),
-                         t[r + 1][3], t[r + 1][3] + np.array([- DCtop[r][1], 0])])
-
-    # Part for bottom DCs
-    nb = len(DCb)
-    m = nb // 2
-    b = [[[0 for i in range(2)] for j in range(4)] for k in range(nb)]
-    b = np.array(b)
-
-    # starting electrode
-    if nb % 2 == 0:
-        b[m] = np.array(
-            [[0, -lenrf_bot], [+ DCb[m][1], -lenrf_bot],
-             [+ DCb[m][1], -lenrf_bot - DCb[m][0]],
-             [0, -lenrf_bot - DCb[m][0]]])
-    else:
-        b[m] = np.array([[- DCb[m][1] / 2, -lenrf_bot],
-                         [+ DCb[m][1] / 2, -lenrf_bot],
-                         [+ DCb[m][1] / 2, -lenrf_bot - DCb[m][0]],
-                         [- DCb[m][1] / 2, -lenrf_bot - DCb[m][0]]])
-
-    # Adding DCs. The same algorythm exept sign y-ax
-    for k in range(m, nb - 1):
-        b[k + 1] = np.array([b[k][1] + np.array([0, 0]), b[k][1] + np.array([DCb[k + 1][1], 0]),
-                             b[k][2] +
-                             np.array(
-                                 [DCb[k + 1][1], -DCb[k + 1][0] + DCb[k][0]]),
-                             b[k][2] + np.array([0, -DCb[k + 1][0] + DCb[k][0]])])
-
-    for k in range(1, m + 1):
-        r = m - k
-        b[r] = np.array([b[r + 1][0] + np.array([- DCb[r][1], 0]), b[r + 1][0] + np.array([0, 0]),
-                         b[r + 1][3] +
-                         np.array([0, -DCb[r][0] + DCb[r + 1][0]]),
-                         b[r + 1][3] + np.array([- DCb[r][1], -DCb[r][0] + DCb[r + 1][0]])])
-
-    for i in range(n):
-        t[i] = t[i][::-1]
-    for i in range(nb):
-        b[i] = b[i][::-1]
-
-    # Creating array of electrodes with names
-    for i in range(n):
-        st = "t[" + str(i + 1) + "]"
-        electrodes.append([st, [t[i]]])
-    for i in range(nb):
-        st = "b[" + str(i + 1) + "]"
-        electrodes.append([st, [b[i]]])
-    electrodes.append(["c", [c]])
-
-    # Polygon approach. All DCs are 0 for now
-    s = System([PolygonPixelElectrode(cover_height=cheight, cover_nmax=cmax, name=n, paths=map(np.array, p))
-                for n, p in electrodes])
-    for i in range(n_rf):
-        st = 'rf' + str(i) + 'u'
-        s[st].rf = Urf[i][0]
-        st = 'rf' + str(i) + 'd'
-        s[st].rf = Urf[i][1]
-
-    for i in range(n):
-        st = "t[" + str(i + 1) + "]"
-        s[st].dc = 0
-    for i in range(nb):
-        st = "b[" + str(i + 1) + "]"
-        s[st].dc = 0
-    s["c"].dc = 0
-    DC.extend(np.array(t)*L)
-    DC.extend(np.array(b)*L)
-    DC.append(np.array(c)*L)
-
-    # creates a plot of electrode
-    if need_plot:
-        fig, ax = plt.subplots(1, 2, figsize=(60, 60))
-        s.plot(ax[0])
-        s.plot_voltages(ax[1], u=s.rfs)
-        # u = s.rfs sets the voltage-type for the voltage plot to RF-voltages (DC are not shown)
-        xmax = rflength * 2 / 3
-        ymaxp = (np.max(DCtop) + lenrf_top + cwidth) * 1.2
-        ymaxn = (np.max(DCbottom) + lenrf_bot) * 1.2
-        ax[0].set_title("colour")
-        # ax[0] addresses the first plot in the subplots - set_title gives this plot a title
-        ax[1].set_title("rf-voltages")
-        for axi in ax.flat:
-            axi.set_aspect("equal")
-            axi.set_xlim(-xmax, xmax)
-            axi.set_ylim(-ymaxn, ymaxp)
-        if save_plot:
-            plt.tight_layout()
-            plt.savefig(save_plot)
-            
-    if need_coordinates:
-        return s, RF, DC
-    else:
-        return s
-
-def polygons_from_gds(gds_lib, L = 1e-6, need_plot = True, need_coordinates = True, cheight=0, cmax=0, save_plot = None):
-    '''
-    Creates polygon trap from GDS file, consisting this trap. 
-    It then plots the trap with indexes for each electrode, 
+    Creates polygon trap from GDS file, consisting this trap. It then plots the trap with indexes for each electrode, 
     for convenient defining of all voltages.
 
     Parameters
     ----------
     gds_lib : file.GDS
         file with GDS structure. This function will read only the top layer.
-    L : float, optional
+    L : float, optional, default is 1e-6
         Dimension scale of the electrode. The default is 1e-6 which means um.
-    need_plot : bool, optional
-        If True, returns a plot of the trap with each electrode assigned its index 
-        along the order from the GDS file. The default is False.
-    need_coordinates : bool, optional
-        If True, returns the coordinates, scaled by L to SU form, used by polygon_simulation(). The default is False.
-    cheight : float, optional
-        Height of cover electrode - grounded plane above the trap. The default is 0.
-    cmax : int, optional
-        Expansion order for cover electrode. Usually 5 is sufficient for correct calculations. The default is 0.
-    save_plot : str, optional
-        Saves the plot to the file for the provided path.
-        For example: "five-wire_trap.eps" will create this file with the plot.
-        The default is None.
+    cheight : float, optional, default is 0
+        Height of cover electrode - grounded plane above the trap.
+    cmax : int, optional, default is 0
+        Expansion order for cover electrode. Usually 5 is sufficient for correct calculations.
+    need_coordinates : bool, optional, default if False
+        If True, returns the coordinates, scaled by L to SU form, used by polygon_simulation(). 
+    need_plot : bool, optional, default is False
+        If True, returns a plot of the trap with each electrode assigned its index along the order from the GDS file. 
+    save_plot : str, optional, default is None
+        If not None, saves the plot under the provided filename.
 
     Returns
     -------
     s : electrode.System object
-        Surface trap from electrode .
-    full_elec : list shape (number of electrodes, electrode shape), optional
+        Surface trap from electrode.
+    full_elec : list shape([number of electrodes, electrode shape]), optional
         returns electrodes coordinates in SU for MD simulation or additional reordering.
 
 
@@ -1760,39 +1579,37 @@ def polygons_from_gds(gds_lib, L = 1e-6, need_plot = True, need_coordinates = Tr
         return s
     
 
-def polygons_reshape(full_electrode_list, order, L = 1e-6, need_plot = True, need_coordinates = True, cheight=0, cmax=0, save_plot = None):
+def polygons_reshape(full_electrode_list, order, L=1e-6, need_plot=True, need_coordinates=True, 
+                     cheight=0, cmax=0, save_plot=None):
     '''
     Sometimes it is convenient to have specific order of electrodes: RF starting first and so on.
-    This function will reorder the electrode array, obtained from polygon_to_gds(),
-    for a desired order.
+    This function will reorder the electrode array, obtained from polygon_to_gds(), for a desired order.
 
     Parameters
     ----------
-    full_electrode_list : list shape (number of electrodes, electrode shape)
+    full_electrode_list : list shape([number of electrodes, electrode shape])
         electrodes coordinates in SU from polygon_to_gds().
-    order : list shape (number of electrodes)
+    order : list shape([number of electrodes])
         Desired order, along which electrode indeces will be reassigned.
-    L : float, optional
+    L : float, optional, default is 1e-6
         Dimension scale of the electrode. The default is 1e-6 which means um.
-    need_plot : bool, optional
+    need_plot : bool, optional, default is False
         If True, returns a plot of the trap with each electrode assigned its index 
-        along the order from the GDS file. The default is False.
-    need_coordinates : bool, optional
-        If True, returns the coordinates, scaled by L to SU form, used by polygon_simulation(). The default is False.
-    cheight : float, optional
-        Height of cover electrode - grounded plane above the trap. The default is 0.
-    cmax : int, optional
-        Expansion order for cover electrode. Usually 5 is sufficient for correct calculations. The default is 0.
-    save_plot : str, optional
-        Saves the plot to the file for the provided path.
-        For example: "five-wire_trap.eps" will create this file with the plot.
-        The default is None.
+        along the order from the GDS file. 
+    need_coordinates : bool, optional, default is False
+        If True, returns the coordinates, scaled by L to SU form, used by polygon_simulation().
+    cheight : float, optional, default is 0
+        Height of cover electrode - grounded plane above the trap. 
+    cmax : int, optional, default is 0
+        Expansion order for cover electrode. Usually 5 is sufficient for correct calculations. 
+    save_plot : str, optional, default is None
+        If not None, saves the plot under the provided filename.
 
     Returns
     -------
     s : electrode.System object
         Surface trap from electrode .
-    full_elec : list shape (number of electrodes, electrode shape), optional
+    full_elec : list shape([number of electrodes, electrode shape]), optional
         returns electrodes coordinates in SU for MD simulation or additional reordering.
 
     '''
@@ -1836,14 +1653,14 @@ def gapping(elec, gap):
 
     Parameters
     ----------
-    elec : np.array shape [number of points in electrode, 2]
+    elec : np.array shape([number of points in electrode, 2])
         Electrode to shrink, defined by its coordinates.
     gap : float
         Length to shrink the electrode. Corresponds to the width of the gap /2.
 
     Returns
     -------
-    gapped : np.array shape [number of points in electrode, 2]
+    gapped : np.array shape([number of points in electrode, 2])
         Shrinked electrode.
 
     '''
@@ -1924,19 +1741,18 @@ def gapping(elec, gap):
     gapped = np.array(gapped)
     return gapped
 
-def polygon_to_gds(trap, name, gap = 0):
+def polygon_to_gds(trap, name, gap=0):
     '''
     Creates GDS file of the trap with a given (uniformal) gap between electrodes
 
     Parameters
     ----------
-    trap : list shape [ number of electrodes, electrode shape]
-        List of electrode coordinates for each electrode in the trap. Must be 
-        in um scale.
+    trap : list shape([number of electrodes, electrode shape])
+        List of electrode coordinates for each electrode in the trap. Must be in um scale.
     name : str
         Name of the file to create GDS. Must end with '.gds'.
-    gap : float, optional
-        Gap width between two electrodes. The default is 0.
+    gap : float, optional, default is 0
+        Gap width between two electrodes. 
 
     Returns
     -------
@@ -1968,7 +1784,7 @@ def ioncloud_min(x, number, radius):
 
     Parameters
     ----------
-    x : np.array shape (3)
+    x : np.array shape([3])
         (x, y, z) coordinates of a central point of ion cloud.
     number : int
         Number of ions.
@@ -1977,7 +1793,7 @@ def ioncloud_min(x, number, radius):
 
     Returns
     -------
-    positions : np.array shape (number, 3)
+    positions : np.array shape([number, 3])
         positions of each ion.
 
     '''
@@ -2001,7 +1817,7 @@ def ions_in_order(x, number, dist):
 
     Parameters
     ----------
-    x : np.array shape (3)
+    x : np.array shape([3])
         (x, y, z) coordinates of a starting point of ion chain.
     number : int
         Number of ions.
@@ -2010,7 +1826,7 @@ def ions_in_order(x, number, dist):
 
     Returns
     -------
-    positions : np.array shape (number, 3)
+    positions : np.array shape([number, 3])
         positions of each ion.
 
     '''
@@ -2028,7 +1844,8 @@ Normal mode calculation
 
 def mathieu_solver(r, *a):
     """
-    !!! This function is copied from the electrode package without changes. It is required here to avoid deprecation with numpy > 1.20. !!!
+    !!! This function is copied from the electrode package without changes.
+     It is required here to avoid deprecation with numpy > 1.20. !!!
 
     Solve the generalized Mathieu/Floquet equation::
 
@@ -2087,30 +1904,31 @@ def mathieu_solver(r, *a):
 
 def single_ion_modes(s, potential_minimum, ion_mass, L=1e-6, charge=1, mathieu=False, r=2, Omega=None):
     '''
-    Small *electrode* wrapper for more convenient trap frequency calculation. Calculates either secular modes of mathieu modes for a single ion.
+    Small *electrode* wrapper for more convenient trap frequency calculation. Calculates either secular modes of
+    mathieu modes for a single ion.
 
     Parameters
     ----------
     s : electrode.System object
         Surface trap from *electrode*.
-    potential_minimum : np.array shape (3)
+    potential_minimum : np.array shape([3])
         Potential minimum position for this trap.
     ion_mass : float
         Ion mass in standard units.
-    L : float, optional
+    L : float, optional, default is 1e-6
         Dimension scale of the electrode. The default is 1e-6 which means um.
-    charge : int, optional
-        Ion charged, scaled to elementary charge, by default 1.
-    mathieu : bool, optional
-        If True -- calculates Mathieu modes, if False -- calculates secular modes. By default False
-    r : int, optional
-        Band cutoff for Mathieu modes calculation, by default 2.
-    Omega : float, optional
-        If not None -- RF frequency of the trap, by default None. Required for Mathieu modes calculation.
+    charge : int, optional, default is 1
+        Ion charged, scaled to elementary charge.
+    mathieu : bool, optional, default if False
+        If True -- calculates Mathieu modes, if False -- calculates secular modes.
+    r : int, optional, default is 2
+        Band cutoff for Mathieu modes calculation.
+    Omega : float, optional, default is None
+        If not None -- RF frequency of the trap. Required for Mathieu modes calculation.
 
     Returns
     -------
-    omegas : np.array shape(3)
+    omegas : np.array shape([3])
         Single ion frequencies in Hz.
     ion_modes : np.array shape([3,3])
         Single ion modes.
@@ -2135,34 +1953,35 @@ def single_ion_modes(s, potential_minimum, ion_mass, L=1e-6, charge=1, mathieu=F
         
     return omegas, ion_modes
 
-def equilibrium_ion_positions(s, dc_set, ion_masses, ion_number, potential_minimum=None, L = 1e-6, charges = 1, positions_guess=None):
+def equilibrium_ion_positions(s, dc_set, ion_masses, ion_number, potential_minimum=None, L=1e-6, 
+                              charges=1, positions_guess=None):
     '''
-    Calculates the equilibrium ion positions in a crystal in pseudopotential approximation by minimizing the system's energy.
+    Calculates the equilibrium ion positions in a crystal in pseudopotential approximation by minimizing 
+    the system's energy.
 
     Parameters
     ----------
     s : electrode.System object
         Surface trap from electrode .
-    dc_set : array shape (len(DCs))
+    dc_set : array shape([len(DC electrodes)])
         Set of the voltages on DC electrodes.
-    ion_masses : np.array shape (ion number) or float
+    ion_masses : np.array shape([ion number]) or float
         Either array of ion masses for mixed species crystal, or a single ion mass for a single species crystal
     ion_number : int
         Ion number
-    potential_minimum : np.array shape (3), optional
+    potential_minimum : np.array shape([3]), optional, default is None
         If not None -- guess for the potential minimum position. Not needed, if positions_guess is not None.
-        by default None. 
-    L : float, optional
+    L : float, optional, default is 1e-6
         Dimension scale of the electrode. The default is 1e-6 which means um.
-    charges : np.array shape (ion_number) or int, optional
-        Array of ion charges for crystals with varying charged, or a single charge for uniformly charged ions. Scaled for elementary charge. The default is +1.
-    positions_guess : np.array shape(ion_number, 3), optional
+    charges : np.array shape([ion_number]) or int, optional, default is 1
+        Array of ion charges for crystals with varying charged, or a single charge for uniformly charged ions. 
+        Scaled for elementary charge. 
+    positions_guess : np.array shape([ion_number, 3]), optional, default is None
         If not None -- initial guess for ion positions in the crystal. If None, potential_minimum should be not None.
-        by default None
 
     Returns
     -------
-    equilibrium positions : np.array shape(ion_number, 3)
+    equilibrium positions : np.array shape([ion_number, 3])
         Array of equilibrium ion positions in the surface trap. 
     '''
     N = ion_number
@@ -2183,7 +2002,7 @@ def equilibrium_ion_positions(s, dc_set, ion_masses, ion_number, potential_minim
 
         Parameters
         ----------
-        x : np.array shape(3 * ion_number)
+        x : np.array shape([3 * ion_number])
             concatentated array of ion coordinates
 
         Returns
@@ -2192,9 +2011,10 @@ def equilibrium_ion_positions(s, dc_set, ion_masses, ion_number, potential_minim
             Potential energy in eV
         '''
         x = np.array_split(x, N)
-        with s.with_voltages(dcs = u_set, rfs = None):
-            pot = 0
-            for i, x0 in enumerate(x):
+        rf_set = s.rfs[s.rfs != 0]
+        pot = 0
+        for i, x0 in enumerate(x):
+            with s.with_voltages(dcs = u_set, rfs = rf_set*np.sqrt(ion_masses[0]*charges[i]/ion_masses[i]/charges[0])):
                 pot += s.potential(x0)
                 for j in range(i+1,N):
                     kap = ct.e*charges[i]*charges[j] / (4*np.pi*ct.epsilon_0)/L
@@ -2225,34 +2045,33 @@ def equilibrium_ion_positions(s, dc_set, ion_masses, ion_number, potential_minim
 def hessian(ion_positions, omega_sec, ion_masses, charges):
     '''
     Hessian of harmonic ion potential for ion crystal, necessary to calculate normal modes.
-    Is a hessian for N ion modes and 3 principle axes, defined in the following form:
+    A hessian for N ion modes and 3 principle axes is defined in the following form:
         [[XX XY XZ]
          [YX YY YZ]
          [ZX ZY ZZ]], XX = matrix (N*N)
 
     Parameters
     ----------
-    ion_positions : np.array shape (ion number, 3)
+    ion_positions : np.array shape([ion number, 3])
         Array of equilibrium ion positions.
-    omega_sec : np.array shape (ion number, 3)
+    omega_sec : np.array shape([ion number, 3])
         Array of secular frequencies in 3 axes for each ion.
-    ion_masses : np.array shape (ion number)
+    ion_masses : np.array shape([ion number])
         Array of ion masses.
-    charges : np.array shape (ion number)
+    charges : np.array shape([ion number])
         Array of ion charges.
 
     Returns
     -------
-    A_matrix : np.array(3*ion_number, 3*ion_number)
+    A_matrix : np.array shape([3*ion_number, 3*ion_number])
         Hessian.
-    M_matrix : np.array(3*ion_number, 3*ion_number)
+    M_matrix : np.array shape([3*ion_number, 3*ion_number])
         Mass matrix, used to retrieve normal modes.
 
     '''
-    global amu, ech, eps0
     ion_positions = np.array(ion_positions)
     omega_sec = np.array(omega_sec)*2*np.pi
-    l = (ech**2 / (4*np.pi*eps0*ion_masses[0]*(omega_sec[0][2])**2))**(1/3)
+    l = (ct.e**2 / (4*np.pi*ct.epsilon_0*ion_masses[0]*(omega_sec[0][2])**2))**(1/3)
     ion_positions = ion_positions/l
     N = len([len(a) for a in ion_positions])
     M_matrix = np.diag(list(np.array(ion_masses)**(-0.5))*3)
@@ -2340,47 +2159,46 @@ def hessian(ion_positions, omega_sec, ion_masses, charges):
 
 def normal_modes(ion_positions, omega_sec, ion_masses, charges = 1, linear = False, reshape = True):
     '''
-    Calculation of normal modes for an arbitrary configuration of ion crystal
-    in harmonic potential. Arbitrary means spatially linear or nonlinear (2D, 3D) 
-    crystals, of single or mixed-species ions, in individual potential 
-    configurations (optical tweezers, individual micro traps), with arbitrary charges.
-    This function works not only for surface traps, but for any trap, as long as 
-    necessary parameters are provided.
+    Calculation of normal modes for an arbitrary configuration of ion crystal in harmonic potential. Arbitrary means 
+    spatially linear or nonlinear (2D, 3D) crystals, of single or mixed-species ions, in individual potential 
+    configurations (optical tweezers, individual micro traps), with arbitrary charges. This function works not only 
+    for surface traps, but for any trap, as long as necessary parameters are provided.
 
     Parameters
     ----------
-    ion_positions : np.array shape (ion number, 3)
+    ion_positions : np.array shape ([ion number, 3])
         Array of equilibrium ion positions.
-    omega_sec : np.array shape (ion number, 3) or (3)
+    omega_sec : np.array shape([ion number, 3]) or ([3])
         Array of secular frequencies in 3 axes for each ion. Or a single 
         secular frequency, if they are equal for each ion
-    ion_masses : np.array shape (ion number) or float
+    ion_masses : np.array shape([ion number]) or float
         Array of ion masses. Or a single mass, if all the ions have equal mass.
-    charges : np.array shape (ion_number) or int, optional
-        Array of ion charges for crystals with varying charged, or a single charge for uniformly charged ions. Scaled for elementary charge. The default is +1.
-    linear : bool, optional
+    charges : np.array shape([ion_number]) or int, optional, default is 1
+        Array of ion charges for crystals with varying charged, or a single charge for uniformly charged ions. 
+        Scaled for elementary charge. 
+    linear : bool, optional, default if False
         If True it will return only normal modes for each of principle axes of
-        oscillation (x,y,z). correct for linear ion chains. The default is False.
-    reshape : bool, optional
+        oscillation (x,y,z). correct for linear ion chains.
+    reshape : bool, optional, default is True
         If True, result reshapes so that first come the modes, where maximal value
-        of mode vector is in x direction (ie X modes), then Y modes, then Z modes. The default is True.
+        of mode vector is in x direction (ie X modes), then Y modes, then Z modes. 
 
     Returns
     -------
-    norm_freqs : np.array shape (3*ion number)
+    norm_freqs : np.array shape([3*ion number])
         Array of normal mode frequencies for each mode, in Hz (so scaled by 2pi).
-    norm_modes : np.array shape (3*ion number, 3*ion_number)
+    norm_modes : np.array shape([3*ion number, 3*ion_number])
         Normal mode matrix for every principle axis of oscillation. Each mode 
         has the following structure: the value of mode vector is given along x(y,z)-axis
         [x_axis[0],...x_axis[ion number], y_axis[0],...y_axis[ion number], z_axis[0],...z_axis[ion number]]
         Here the axes correspond to the directions of secular frequencies (of the first ion in crystal).
         
-    Optional returns in case of linear chain
+    Optional returns in case of linear chain (linear=True)
     ----------------------------------------
-    norm_freqs : np.array shape (3, ion number)
+    norm_freqs : np.array shape([3, ion number])
         Array of normal mode frequencies for each principle axis (x,y,z),
         in Hz (so scaled by 2pi).
-    norm_modes : np.array shape (3, ion number, ion_number)
+    norm_modes : np.array shape([3, ion number, ion_number])
         Normal mode matrix for each axis (x,y,z).
 
     '''
@@ -2471,25 +2289,23 @@ Anharmonic Mathieu modes
 
 def coulumb_hessian(ion_positions, charges):
     '''
-    Returns Hessian of Coulomb potential for ions near equilibrium postions
-    in harmonic approximation.
+    Returns Hessian of Coulomb potential for ions near equilibrium postions in harmonic approximation.
 
     Parameters
     ----------
-    ion_positions : np.array shape (ion number, 3)
+    ion_positions : np.array shape([ion number, 3])
         Array of equilibrium ion positions.
-    charges : np.array of ints shape (ion_number)
+    charges : np.array of ints shape([ion_number])
         Array of ion charges, scaled for elementary charge.
 
     Returns
     -------
-    A_matrix : np.array shape (3*ion number, 3*ion number)
+    A_matrix : np.array shape([3*ion number, 3*ion number])
         Coulomb Hessian in SU.
 
     '''
-    global amu, ech, eps0
     ion_positions = np.array(ion_positions)
-    kap = ech**2 / (4*np.pi*eps0)
+    kap = ct.e**2 / (4*np.pi*ct.epsilon_0)
     N = len([len(a) for a in ion_positions])
 
     def d(i, j):
@@ -2587,19 +2403,19 @@ def trap_hessian(ion_positions, s, rf_set, Omega, dc_set, ion_masses, charges, L
 
     Parameters
     ----------
-    ion_positions : np.array shape (ion number, 3)
+    ion_positions : np.array shape([ion number, 3])
         Array of equilibrium ion positions.
     s : electrode.System object
         Surface trap from electrode package
-    rf_set : list shape (RFs)
+    rf_set : list shape([len(RF electrodes)])
         List of RF amplitudes for each electrode in SU.
     Omega : float
         RF frequency of the trap
-    dc_set : array shape (len(DCs))
+    dc_set : list shape([len(DC electrodes)])
         Set of the voltages on DC electrodes.
-    ion_masses : np.array shape (ion number)
+    ion_masses : np.array shape([ion number])
         Array of ion masses.
-    charges : np.array of ints shape (ion_number)
+    charges : np.array of ints shape([ion_number])
         Array of ion charges, scaled for elementary charge.
     L : float
         Length scale of the electrode. 
@@ -2612,11 +2428,11 @@ def trap_hessian(ion_positions, s, rf_set, Omega, dc_set, ion_masses, charges, L
 
     Returns
     -------
-    A : np.array shape (3*ion number, 3*ion number)
+    A : np.array shape([3*ion number, 3*ion number])
         Anharmonic Hessian of the trap DC potential in SU.
-    Q : np.array shape (3*ion number, 3*ion number)
+    Q : np.array shape([3*ion number, 3*ion number])
         Anharmonic Hessian of the trap RF potential in SU.
-    M_matrix : np.array(3*ion_number, 3*ion_number)
+    M_matrix : np.array([3*ion_number, 3*ion_number])
         Mass matrix, used to retrieve normal modes for single and mixed species crystals.
 
     '''
@@ -2626,19 +2442,19 @@ def trap_hessian(ion_positions, s, rf_set, Omega, dc_set, ion_masses, charges, L
     Q_hes = []
 
     for i,pos in enumerate(ion_positions):
-        Urf = rf_set*np.sqrt(ech*charges[i]/ion_masses[i])/(2*L*Omega)
+        Urf = rf_set*np.sqrt(ct.e*charges[i]/ion_masses[i])/(2*L*Omega)
 
         with s.with_voltages(dcs = u_set, rfs = Urf):
             min_pos = np.array(s.minimum( 1.001*pos/L, axis=(0, 1, 2), coord=np.identity(3), method="Newton-CG"))
 
         with s.with_voltages(dcs = u_set, rfs = rf_set):
-            A_deriv2 = s.electrical_potential(min_pos, "dc", 2, expand=True)[0]*ech/L**2 
-            Q_deriv2 = s.electrical_potential(min_pos, "rf", 2, expand=True)[0]*ech/L**2
+            A_deriv2 = s.electrical_potential(min_pos, "dc", 2, expand=True)[0]*ct.e/L**2 
+            Q_deriv2 = s.electrical_potential(min_pos, "rf", 2, expand=True)[0]*ct.e/L**2
 
             A_deriv3 = np.zeros([3,3])
             Q_deriv3 = np.zeros([3,3])
-            pota = s.electrical_potential(min_pos, "dc", 3, expand=True)[0]*ech/L**2 
-            potq = s.electrical_potential(min_pos, "rf", 3, expand=True)[0]*ech/L**2
+            pota = s.electrical_potential(min_pos, "dc", 3, expand=True)[0]*ct.e/L**2 
+            potq = s.electrical_potential(min_pos, "rf", 3, expand=True)[0]*ct.e/L**2
             
             for r in range(N):
                 for p in range(3):
@@ -2647,8 +2463,8 @@ def trap_hessian(ion_positions, s, rf_set, Omega, dc_set, ion_masses, charges, L
 
             A_deriv4 = np.zeros([3,3])
             Q_deriv4 = np.zeros([3,3])
-            potaa = s.electrical_potential(min_pos, "dc", 4, expand=True)[0]*ech/L**2
-            potqq = s.electrical_potential(min_pos, "rf", 4, expand=True)[0]*ech/L**2
+            potaa = s.electrical_potential(min_pos, "dc", 4, expand=True)[0]*ct.e/L**2
+            potqq = s.electrical_potential(min_pos, "rf", 4, expand=True)[0]*ct.e/L**2
 
             for r in range(N):
                 for v in range(N):
@@ -2684,41 +2500,42 @@ def trap_hessian(ion_positions, s, rf_set, Omega, dc_set, ion_masses, charges, L
 
     return A, Q, M_matrix
 
-def crystal_modes(ion_positions, ion_masses, s, rf_set, Omega, dc_set, 
-                  L = 1e-6, charges = 1, reshape=True, anharmonic=True):
+def crystal_modes(ion_positions, ion_masses, s, rf_set, Omega, dc_set, L = 1e-6, charges = 1, 
+                  reshape=True, anharmonic=True):
     '''
     Returns harmonic modes of an arbitrary ion crystal configuration in surface trap, considering time-dependent 
     potential as in 3N dimensional Mathieu equation and hexapole and octopole anharmonic potential terms of the trap.
 
     Parameters
     ----------
-    ion_positions : np.array shape (ion number, 3)
+    ion_positions : np.array shape([ion number, 3])
         Array of equilibrium ion positions.
-    ion_masses : np.array shape (ion number) or float
+    ion_masses : np.array shape([ion number]) or float
         Array of ion masses. Or a single mass, if all the ions have equal mass.
     s : electrode.System object
         Surface trap from *electrode* package
-    rf_set : list shape (RFs)
+    rf_set : list shape([len(RF electrodes)])
         List of RF amplitudes for each electrode in SU.
     Omega : float
         RF frequency of the trap
-    dc_set : array shape (len(DCs))
+    dc_set : array shape([len(DC electrodes)])
         Set of the voltages on DC electrodes.
-    L : float, optional
+    L : float, optional, default is 1e-6
         Dimension scale of the electrode. The default is 1e-6 which means um.
-    charges : np.array of ints shape (ion_number) or int, optional
-        Array of ion charges (or single charge), scaled for elementary charge. The default is +1.
-    reshape : bool, optional
+    charges : array of ints shape([ion_number]) or int, optional, default is 1
+        Array of ion charges for crystals with varying charged, or a single charge for uniformly charged ions. 
+        Scaled for elementary charge. 
+    reshape : bool, optional. default is True
         If True, result reshapes so that first come the modes, where maximal value
-        of mode vector is in x direction (ie X modes), then Y modes, then Z modes. The default is True.
+        of mode vector is in x direction (ie X modes), then Y modes, then Z modes.
         !!Note may give unexpected results for anharmonic modes, which reflects anharmonic mixing of modes on different
         principle oscillation axes/ !!
 
     Returns
     -------
-    norm_freqs : np.array shape (3*ion number)
+    norm_freqs : np.array shape([3*ion number])
         Array of harmonic mode frequencies for each mode, in Hz.
-    norm_modes : np.array shape (3*ion number, 3*ion_number)
+    norm_modes : np.array shape ([3*ion number, 3*ion_number])
         Harmonic mode matrix for every principle axis of oscillation with anharmonic 
         modifications for harmonic mode vectors. Each mode has the following structure:
         the value of mode vector is given along x(y,z)-axis
@@ -2767,28 +2584,27 @@ def crystal_modes(ion_positions, ion_masses, s, rf_set, Omega, dc_set,
 
     return norm_freqs, norm_modes
 
-def anharmonics(s, minimums, axis, L = 1e-6):
+def anharmonics(s, minimums, axis, L=1e-6):
     """
-    Calculates anharmonic scale lengths at given coordinates.
-    The lengthes are given for harmonic, n = 3 and n = 4 terms.
-    Length are defined as in DOI 10.1088/1367-2630/13/7/073026 .
+    Calculates anharmonic scale lengths at given coordinates. The lengthes are given for harmonic, n = 3 and
+     n = 4 terms. Length are defined as in DOI 10.1088/1367-2630/13/7/073026 .
 
     Parameters
     ----------
     s : electrode.System object
         System object from electrode package, defining the trap
-    minimums : array shape [number of dots, 3]
+    minimums : array shape([number of positions, 3])
         Coordinates of approximate minimum positions (the exact mimums will be
                                                       calculated from them)
     axis : int
         axis, along which the anharmonicity is investigated. 
         Determined by respecting int: (0, 1, 2) = (x, y, z)
-    L : float, optional
+    L : float, optional, default is 1e-6
         Dimension scale of the electrode. The default is 1e-6 which means um.
 
     Returns
     -------
-    results : list shape [number of dots, 3]
+    results : list shape [number of positions, 3]
         array of anharmonic scale lengths (in m) in each calculated potential minimum. 
         Given as  [l2, l3, l4], for ln being scale length of the n's potential term
 
@@ -2811,10 +2627,10 @@ def anharmonics(s, minimums, axis, L = 1e-6):
                 pot = s.potential(x1, derivative = 4)[0][p][c]/L**4
                 deriv4 = deriv4 + 1/12*pot
         
-        k2 = deriv2[axis]*ech/L**2
-        k3 = np.linalg.eig(deriv3)[0][axis]*ech
-        k4 = np.linalg.eig(deriv4)[0][axis]*ech
-        l2 = (ech**2/(4*np.pi*eps0*k2))**(1/3)
+        k2 = deriv2[axis]*ct.e/L**2
+        k3 = np.linalg.eig(deriv3)[0][axis]*ct.e
+        k4 = np.linalg.eig(deriv4)[0][axis]*ct.e
+        l2 = (ct.e**2/(4*np.pi*ct.epsilon_0*k2))**(1/3)
         l3 = (k3/k2)**(1/(2-3))
         l4 = np.sign(k4)*(np.abs(k4)/k2)**(1/(2-4))
         results.append([l2, l3, l4])
@@ -2826,36 +2642,31 @@ def anharmonics(s, minimums, axis, L = 1e-6):
 Stability analysis
 """
 
-def stability(s, Ms, Omega, Zs, minimum, L = 1e-6, need_plot = True, save_plot = None):
+def stability(s, ion_masses, Omega, minimum, charges=1, L=1e-6, need_plot=True, save_plot=None):
     """
-    Returns stability parameters for the linear planar trap (RF confinement only radial)
-    If asked, return plot of the stability a-q diagram for this trap and plots 
-    the parameters for this voltage configuration (as a color dot) for given isotopes.
-    Additoinally returns geometric parameters of stability for this trap (alpha, theta),
-    range of achievable a and q parameters.
+    Returns stability parameters for the linear planar trap (RF confinement only radial) If asked, return plot of the 
+    stability a-q diagram for this trap and plots the parameters for this voltage configuration (as a color dot) 
+    for given isotopes.
 
     Parameters
     ----------
     s : electrode.System object
         System object from electrode package, defining the trap
-    Ms : float or list shape (number of species)
-        ion mass in SU, single or an array to plot several isotopes
+    ion_masses : float or list shape([number of species])
+        Either array of ion masses to analyse several species, or a single ion mass for a single species
     Omega : float
         RF frequency 
-    Zs : float or list shape (number of species) 
-        ion charge in SU, single or an array for different ions
     minimum : list shape (3)
-        approximate position of potential minimum, from which the
-        real minimum is calculated
-    L : float, optional
+        approximate position of potential minimum, from which the real minimum is calculated
+    charge : int or list of ints shape([number of species]), optional, default is 1
+        Array of ion charges for species with varying charge, or a single charge for uniformly charged ion species. 
+        Scaled for elementary charge. 
+    L : float, optional, default is 1e-6
         Dimension scale of the electrode. The default is 1e-6 which means um.
-    need_plot : int, optional
-        if True, then the plot of the stability diagram and the 
-        a-q parameters for this voltage configuration is shown. The default is True.
-    save_plot : str, optional
-        Saves the plot to the file for the provided path.
-        For example: "five-wire_trap.eps" will create this file with the plot.
-        The default is None.
+    need_plot : int, optional, default is True
+        if True, then the plot of the stability diagram and the a-q parameters for this voltage configuration is shown. 
+    save_plot : str, optional, default is None
+        If not None, saves the plot under the provided filename.
 
     Returns
     -------
@@ -2871,46 +2682,43 @@ def stability(s, Ms, Omega, Zs, minimum, L = 1e-6, need_plot = True, save_plot =
         plot of the stability diagram and trap's a-q parameters on it 
 
     """
-    if type(Ms) is not list: 
-        try:
-            Ms = list(Ms)
-            Zs = list(Zs)
-        except:
-            Ms = [Ms]
-            Zs = [Zs]
-            
+    try:
+        ion_masses[0]
+    except:
+        ion_masses = [ion_masses]
+    
+    try:
+        charges[0]
+    except:
+        charges = np.ones(len(ion_masses)) * charges
+    
+    charges = np.array(charges) * ct.e
     params = {}
-    for M, Z in zip(Ms, Zs):
+    for M, Z in zip(ion_masses, charges):
         rf_set = s.rfs
         rf_set = rf_set*np.sqrt(Z/M)/(2*L*Omega)
         scale = Z/((L*Omega)**2*M)
         with s.with_voltages(dcs = None, rfs = rf_set):
             x1 = s.minimum(np.array(minimum), axis=(0, 1, 2), coord=np.identity(3), method="Newton-CG")
-            #mathieu matrices
-            a = 4*scale*s.electrical_potential(x1, "dc", 2, expand=True)[0]  #need to find alpha/alpha' so 2 derivative needed
-            q = 4*np.sqrt(scale)*s.electrical_potential(x1, "rf", 2, expand=True)[0]      #so here we obtain hessian of this potential, didj(F)
 
+            a = 4*scale*s.electrical_potential(x1, "dc", 2, expand=True)[0] 
+            q = 4*np.sqrt(scale)*s.electrical_potential(x1, "rf", 2, expand=True)[0]      
             a, q = np.array(a), np.array(q)
-
-            #removing axial directions for following stability analisis
             A = a
             Q = q
             A = A[1:3, 1:3]
             Q = Q[1:3, 1:3]
 
-            #diagonalize A
             DiagA, BasA = np.linalg.eig(A)
             DiagA = np.diag(DiagA)
             areal = DiagA[0,0]
-            alpha = -DiagA[1,1]/areal
+            alpha = np.abs(-DiagA[1,1]/areal)
 
-            #diagonalize Q
             DiagQ, BasQ = np.linalg.eig(Q)
             DiagQ = np.diag(DiagQ)
             qreal = DiagQ[0,0]
-            params[f'Ion (M = {round(M/amu):d}, Z = {round(Z/ech):d})'] = {'a':areal, 'q':qreal}
+            params[f'Ion (M = {round(M/ct.atomic_mass):d}, Z = {round(Z/ct.e):d})'] = {'a':areal, 'q':qreal}
 
-    #obtain theta
     rot = np.dot(np.linalg.inv(BasQ),BasA)
     thetha = np.arccos(rot[0,0])
     c = np.cos(2*thetha)
@@ -2918,15 +2726,12 @@ def stability(s, Ms, Omega, Zs, minimum, L = 1e-6, need_plot = True, save_plot =
     params['\u03B1'] = alpha
     params['\u03B8'] = thetha
 
-
-    #boundaries
     q = np.linspace(0,1.5, 1000)
     ax = -q**2/2
     ab = q**2/(2*alpha)
     ac = 1 - c*q - (c**2/8 + (2*sin**2*(5+alpha))/((1+alpha)*(9+alpha)))*q**2
     ad = -(1 - c*q - (c**2/8 + (2*sin**2*(5+1/alpha))/((1+1/alpha)*(9+1/alpha)))*q**2)/alpha
 
-    #critical a, q
     aa = 1/(2*alpha)
     bb = 1
     cc = -c
@@ -2958,7 +2763,6 @@ def stability(s, Ms, Omega, Zs, minimum, L = 1e-6, need_plot = True, save_plot =
 
     
     if need_plot:
-        #plotting boundaries 
         fig = plt.figure()
         fig.set_size_inches(7,5)
         plt.plot(q,ax, 'g')
@@ -2966,7 +2770,6 @@ def stability(s, Ms, Omega, Zs, minimum, L = 1e-6, need_plot = True, save_plot =
         plt.plot(q,ac, 'g')
         plt.plot(q,ad, 'g')
         
-        #unifying noudaries to two united line so the area between them can be filled by plt.fill_between
         y1 = np.array(list(map(max, zip(ax, ad))))
         y2 = np.array(list(map(min, zip(ab, ac))))
         
@@ -2984,12 +2787,10 @@ def stability(s, Ms, Omega, Zs, minimum, L = 1e-6, need_plot = True, save_plot =
         plt.locator_params(axis='x', nbins=6)
         plt.locator_params(axis='y', nbins=6)
        
-    
-        #plottin a and q, obtained from potential hessian 
         colors=["maroon", 'peru',"darkgoldenrod",'magenta', "orangered", 'darkorange', 'crimson', 'brown']
         k = 0
-        for M, Z in zip(Ms, Zs):
-            plt.scatter(params[f'Ion (M = {round(M/amu):d}, Z = {round(Z/ech):d})']['q'], params[f'Ion (M = {round(M/amu):d}, Z = {round(Z/ech):d})']['a'], s = 40, edgecolor='black', color = colors[k], label = f'Ion (M = {round(M/amu):d}, Z = {round(Z/ech):d})' )
+        for M, Z in zip(ion_masses, charges):
+            plt.scatter(params[f'Ion (M = {round(M/ct.atomic_mass):d}, Z = {round(Z/ct.e):d})']['q'], params[f'Ion (M = {round(M/ct.atomic_mass):d}, Z = {round(Z/ct.e):d})']['a'], s = 40, edgecolor='black', color = colors[k], label = f'Ion (M = {round(M/ct.atomic_mass):d}, Z = {round(Z/ct.e):d})' )
             k = (k+1)%8
         plt.legend()
         plt.tight_layout()
@@ -3001,212 +2802,390 @@ def stability(s, Ms, Omega, Zs, minimum, L = 1e-6, need_plot = True, save_plot =
     return params
 
 """
-Optimization functions
-
-The optimization routine is written in Python, which affects its speed.
-However, the main source of the slowness of these algorithms is a necessity 
-to determine the potential minimum to calculate the loss function. 
-The potential minimum is determined with its own optimization, which is already
-written in Cython, so only minor increase in speed can be obtained by rewritting these functions in C. 
+Voltage optimization functions
 """
 
-def v_lossf(uset, numbers, s, dots, axis, omegas, Z, M, L, micro):
+def frequency_optimization(s, ion_masses, positions, axis, omegas, start_dcset, numbers=0, eps=1e-9, tol=1e-18,
+                         find_initial_guess=False, call_num=2000, charges=1, L=1e-6, callback_num=100, micro=0, 
+                         voltage_bounds=(-15,15), mathieu=False, r_mathieu=2, Omega_rf=None):
     """
-    Loss function for the DC voltage optimization.
-    If the individual potential well is lost, returns 1000
-    
-    Returns
-    -------
-    loss : float
-        Loss value, calculated as a quadratic norm of difference between the 
-        actual and desired set of secular frequencies
-
-    """
-
-    loss = 0
-    u_set = np.zeros(len([rfs for rfs in s.rfs if rfs != 0]))
-    u_set = np.concatenate([u_set, uset])
-    
-    #obtain result of the function
-    with s.with_voltages(dcs = u_set, rfs = None):
-        for i, pos in enumerate(dots):
-            try:
-                x1 = s.minimum(pos, axis=(0, 1, 2), coord=np.identity(3), method="Newton-CG")
-                curv, mod_dir=s.modes(x1,sorted=False) 
-                for j, axs in enumerate(axis):
-                    omega = (np.sqrt(Z*curv[axs]/M)/(L*2*np.pi) * 1e-6)/omegas[j][0]
-                    loss += (omega - omegas[j][i]/omegas[j][0])**2 
-                loss += micro*np.linalg.norm(x1-pos)**2
-
-            except: 
-                sys.exit("The ion in %s positions is lost." %i)
-            
-    return loss
-
-def v_stoch_grad(uset, stoch, numbers, s, dots, axis, omegas, Z, M, L, micro):
-    """
-    Calculates stochastic gradient, where partial derivative is calculated 
-    only for "stoch:int" randomly chosen parameters
-
-    Returns
-    -------
-    np.ndarray(numbers[1])
-        Calculated gradient
-
-    """
-    rflen = len([rfs for rfs in s.rfs if rfs != 0])
-    dclen = len(s.dcs)
-    df = np.zeros(dclen-rflen)
-    param = np.random.choice(numbers, stoch, replace = 'False')
-    param = np.sort(param)
-    for i in param:
-        uset[i] += 1e-8
-        fplus = v_lossf(uset, numbers, s, dots, axis, omegas, Z, M, L, micro)
-        uset[i] -= 2e-8
-        fmin = v_lossf(uset, numbers, s, dots, axis, omegas, Z, M, L, micro)
-        uset[i] += 1e-8
-        df[i]  = (fplus - fmin)/(2e-8)
-        
-    return np.array(df)
-
-def v_precise_grad(uset, numbers, s, dots, axis, omegas, Z, M, L, micro):
-    """
-    Calculates exact gradient of loss function
-
-    Returns
-    -------
-    np.ndarray(numbers[1])
-        Calculated gradient
-    """
-    
-    rflen = len([rfs for rfs in s.rfs if rfs != 0])
-    dclen = len(s.dcs)
-    df = np.zeros(dclen-rflen)
-    
-    for i in numbers:
-        uset[i] += 1e-8
-        fplus = v_lossf(uset, numbers, s, dots, axis, omegas, Z, M, L, micro)
-        uset[i] -= 2e-8
-        fmin = v_lossf(uset, numbers, s, dots, axis, omegas, Z, M, L, micro)
-        uset[i] += 1e-8
-        df[i]  = (fplus - fmin)/(2e-8)
-        
-    return np.array(df)
-
-
-
-def voltage_optimization(s, Z, M, dots, axis, omegas, start_dcset, learning_rate, numbers = 0, stoch = 0, eps = 1e-8, L = 1e-6, step = 100, micro = False):
-    """
-    A function, determining the DC voltage set for the trap, at which the set
-    of desired secular frequencies is achieved at the requested positions, 
-    using the ADAM optimization.
-    The final positions of potential minima, however, will slightly change due
-    to the change in the DC potential.
-    The secular frequencies may be determined in all the required principle 
-    axes of oscillation simultaneously.
-    The optimization is very slow, and may take hours, so at each number of 
-    iterations, determined by the user, it will print the current result.
+    Optimizes set of voltages on specified electrodes, so that the secular frequencies in all potential minima match 
+    the required frequency set. On request can try to keep potential minima in the same positions. Optimizes both 
+    secular and mathieu modes, performs with mixed species crystals.
 
     Parameters
     ----------
     s : electrode.System object
-        Your trap. It is important, that its RF potential is predetermined, 
-        and all DC electrodes are grounded, before applying this function.
-    Z : float
-        Ion charge
-    M : float
-        Ion mass
-    dots : list shape (number of positions, 3)
-        Positions, at which secular frequencies are calculated
-    axis : list shape (number of axes)
-        List of all principle axes, at which the desired secular frequencies
-        are determined. Defined as (0, 1, 2) = (x, y, z). For example,
-        if axis == (1), only frequencies at y axis are considered.
+        System object from *electrode* package, defining the trap
+    ion_masses : np.array shape([ion number]) or float
+        Either array of ion masses for mixed species crystal, or a single ion mass for a single species crystal
+    positions : list shape([number of positions, 3])
+        Positions of potential minima, at which ion frequencies are calculated
+    axis : list shape([number of axes])
+        List of all principle axes, at which the desired secular frequencies are determined. 
+        Defined as (0, 1, 2) = (x, y, z). For example, if axis == (1), only frequencies at y axis are considered.
         If axis == (0, 1, 2), all axes are considered simultaneously
-    omegas : list shape (len(axis), number of positions)
-        Set of desired secular frequencies in MHz (/2pi), given for 
-        all positions and axes. 
-    start_dcset : list shape (numbers[1])
-        Starting voltages for the optimization. The closer they are, the faster the algorithm
-    learning_rate : float
-        Learning rate of the algorithm. The optimal learning rate may take 
-        various values from 0.000001 to 1000. This should be tested in a particular case.
-    numbers : list shape (number of optimizing electrodes) or int, optional
-        list of the indeces of DC electrodes, used for optimization. 
-        If 0 (default), all DC elecrtodes are used for optimization.
-    stoch : int, optional
-        The default is 0. This value indicates, if the exact gradient descent 
-        (stoch == 0) is performed, or the stochastic gradient descent, with 
-        the stochastic choice of "stoch" parameters each iteration.
-        The stochastic method is much faster, but for closer voltage sets it
-        may loose convergence. In this case, user should switch to the exact gradients.
-    eps : float, optional
-        Convergence, at each the optimization is stopped. The default is 1e-8.
-    L : float, optional
+    omegas : list shape([len(axis), number of positions])
+        Set of desired secular frequencies in Hz (/2pi), given for all positions and axes. 
+    start_dcset : list shape([number of dc electrodes])
+        Starting DC voltages for the optimization (on all electrodes).
+    numbers : list shape([number of optimizing electrodes]) or int, optional, default is 0
+        list of the indeces of DC electrodes, used for optimization. If 0, all DC elecrtodes are used for optimization.
+    eps : float, optional, default is 1e-9
+        Maximal loss, at which the algorithm considers the implementation succesful. If lower eps are possible, 
+        the algorithm will keep optimizing according to tol.
+    tol : float, optional, default is 1e-18
+        Tolerance for termination from scipy.optimize.
+    find_initial_guess : bool, optional, default is False
+        If True, finds the best initial guess for the voltage optimization via randomized grid search. If False, will 
+        just use start_dcset. 
+    call_num : int, optional, default is 2000
+        Number of grid search loss function calls.
+    charges : array shape([ion_number]) or int, optional, default is 1
+        Array of ion charges for crystals with varying charged, or a single charge for uniformly charged ions. 
+        Scaled for elementary charge. 
+    L : float, optional, default is 1e-6
         Dimension scale of the electrode. The default is 1e-6 which means um.
-    step : int, optional
-        Number of iterations, at which the current voltage set will be printed.
-        The default is 100.
-    micro : bool, optional
-        If True, optimization tries to include micromotion compensation to voltage set.
-        The default is False.
+    callback_num : int, optional, default is 100
+        Number of iterations, at which the current voltage set will be as callback printed.
+    micro : float, optional, default is 0
+        If non 0, algorithm will attempt to compensate micromotion by keeping potential minima at the starting positions.
+        Coeff value coresponds to the input of minimum displacement in loss function, and should be evaluated emperically.
+        Approximate range: 0.001 to 10
+    voltage_bounds : tuple (float,float) or list of tuples len(number of dc electrodes), optional, default is (-15,15)
+        List of voltage bounds on each DC electrode. If tuple, then each electrode will be assigned the same bounds. 
+        Alternatively, each electrode can be assigned individual bounds as [(-bnds_1, bnds_1), (-bnds_2,bnds_2),...]
+    mathieu : bool, optional, default is False
+        If True -- optimizes Mathieu modes, if False -- optimizes secular modes.
+    r_mathieu : int, optional, default is 2
+        Band cutoff for Mathieu modes calculation.
+    Omega : float, optional, default is None
+        If not None -- RF frequency of the trap. Required for Mathieu modes calculation.
 
     Returns
     -------
-    uset : list shape (numbers[1])
-        Resulting voltage set.
+    dcset : list shape([number of dc electrodes])
+        Resulting DC voltage set.
 
     """
-    uset = np.array(start_dcset)
-    if micro:
-        mic = 1
-    else:
-        mic = 0
+    positions = np.array(positions)
     try:
         numbers[0]
     except:
-        numbers = np.arange(len(uset))
-    loss2 =  v_lossf(uset, numbers, s, dots, axis, omegas, Z, M, L, mic)
-    print("Initial loss:", loss2)
+        numbers = np.arange(len(start_dcset))
     
-    m = v_precise_grad(uset, numbers, s, dots, axis, omegas, Z, M, L, mic)
-    v = np.square(m)
-    b1 = 0.9
-    b2 = 0.999
-    big = np.arange(100000)
-    small = np.arange(step)
-    t = 0
-    if stoch == 0:
-        for k in big:
-            for kk in small:
-                grad = v_precise_grad(uset, numbers, s, dots, axis, omegas, Z, M, L, mic)
-                m = b1*m+(1-b1)*grad
-                v = b2*v+(1-b2)*np.square(grad)
-                mtilde = m/(1-b1**(1+t))
-                vtilde = v/(1-b2**(1+t))
-                v_sqrt = np.sqrt(vtilde) + np.ones(len(grad))*1e-8
-                uset = uset - learning_rate*np.divide(mtilde,v_sqrt)
-                t+=1
-            loss2 = v_lossf(uset, numbers, s, dots, axis, omegas, Z, M, L, mic)
-            print("Iteration:", t, "Loss function:", loss2)
-            print("uset =", list(uset),"\n")
-            if loss2 <= eps:
-                break
+    try:
+        M = ion_masses[0]
+    except:
+        ion_masses = np.ones(positions.shape[0])*ion_masses
+        M = ion_masses[0]
+    try:
+        Z = charges[0]
+    except:
+        charges = np.ones(positions.shape[0]) * charges
+        Z = charges[0]
+    
+    rf_set = s.rfs
+    numbers = np.array(numbers)
+    omegas = np.array(omegas).T
+    start_dcset = np.array(start_dcset)
+
+    def v_lossf(uset):
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            start_dcset[[numbers]] = uset
+            pbarn.update(1)
+            loss = 0
+            u_set = np.zeros(len([rfs for rfs in s.rfs if rfs != 0]))
+            u_set = np.concatenate([u_set, start_dcset])
+            
+            for i, pos in enumerate(positions):
+                with s.with_voltages(dcs=u_set, rfs=rf_set*np.sqrt(M*charges[i]/ion_masses[i]/Z)):
+                    try:
+                        x1 = s.minimum(pos, axis=(0, 1, 2), coord=np.identity(3), method="Newton-CG",
+                                    tol = 1e-5, options = {'maxiter' : 800})
+                        omega_sec, _ = single_ion_modes(s, x1, ion_masses[i], L=L, charge=charges[i], 
+                                                        mathieu=mathieu, r=r_mathieu, Omega=Omega_rf)
+                        omega_sec = omega_sec[[axis]]
+
+                        if np.any(np.isnan(omega_sec)):
+                            loss += 100
+                        else: 
+                            loss += np.linalg.norm((omega_sec-omegas[i])/omegas[i][0])**2
+                        
+                        loss += micro*np.linalg.norm(x1-pos)**2
+        
+                    except: 
+                        loss += 100
+
+        return loss
+
+    count=[0]
+    def callback(intermediate_result):
+        pbar.update(1)
+        count[0] += 1
+        if count[0] % callback_num == 0:
+            print(f'Current loss = {intermediate_result.fun}')
+            print(f'Current uset = {list(intermediate_result.x)}')
+        return count
+
+    try:
+        voltage_bounds[0][0]
+        voltage_bounds=list(voltage_bounds)
+    except:
+        voltage_bounds = [(voltage_bounds[0],voltage_bounds[1]) for n in range(len(numbers))]
+
+    if find_initial_guess:
+        with tqdm(total=call_num, desc='Finding initial guess') as pbarn:
+            with warnings.catch_warnings():
+                warnings.simplefilter("ignore")
+                res = dummy_minimize(v_lossf, voltage_bounds, n_calls=call_num)
+                initial_uset = res.x
+                print(f'Initial loss = {res.fun}')
+                    
     else:
-        for k in big:
-            for kk in small:
-                grad = v_stoch_grad(uset, stoch, numbers, s, dots, axis, omegas, Z, M, L, mic)
-                m = b1*m+(1-b1)*grad
-                v = b2*v+(1-b2)*np.square(grad)
-                mtilde = m/(1-b1**(1+t))
-                vtilde = v/(1-b2**(1+t))
-                v_sqrt = np.sqrt(vtilde) + np.ones(len(grad))*1e-8
-                uset = uset - learning_rate*np.divide(mtilde,v_sqrt)
-                t+=1
-            loss2 = v_lossf(uset, numbers, s, dots, axis, omegas, Z, M, L, mic)
-            print("Iteration:", t, "Loss function:", loss2)
-            print("uset =", list(uset),"\n")
-            if loss2 <= eps:
-                break
+        with tqdm(desc='Optimizing voltages', disable=True) as pbarn:
+            uset = np.array(start_dcset)[[numbers]]
+            initial_uset = uset[0]
+            print(f'Initial loss = {v_lossf(uset)}')
+        
+    with tqdm(desc='Optimizing voltages') as pbar:
+        with tqdm(desc='Optimizing voltages', disable=True) as pbarn:
+            res = minimize(v_lossf, initial_uset, method='L-BFGS-B', 
+                           callback=callback, tol = tol, bounds = voltage_bounds, options = {'maxiter' : 1000})
+            loss = res.fun
+            if loss > eps:
+                warnings.warn(f"\nFrequency mismatch above accuracy treshold {eps}\nTry decreasing tol or apply find_initial_guess=True or increase call_num\nOptimization result: {res}")
+            
+            print(f'Final loss = {res.fun}')
+            uset = res.x
+            start_dcset[[numbers]] = uset
+            dcset = start_dcset
+            print(f'Final uset = {list(dcset)}')
+
+    return dcset
+
+def mode_optimization(s, alpha, potential_minimum, start_dcset, numbers=0, eps=1e-9, tol=1e-18, 
+                      callback_num=1000, micro=1, voltage_bounds=(-15,15)):
+    """
+    Optimizes set of voltages on specified electrodes, so that the radial modes are rotated by the specified angle. 
+    Conserves the potential minimum in the initial position. 
+
+    Parameters
+    ----------
+    s : electrode.System object
+        System object from *electrode* package, defining the trap
+    alpha : float
+        Angle of mode rotation in rad.
+    potential_minimum : array shape([3])
+        Coordinates of RF potential minimum.
+    start_dcset : array shape([number of dc electrodes])
+        Starting DC voltages for the optimization (on all electrodes).
+    numbers : list shape([number of optimizing electrodes]) or int, optional, default is 0
+        list of the indeces of DC electrodes, used for optimization. If 0, all DC elecrtodes are used for optimization.
+    eps : float, optional, default is 1e-9
+        Maximal loss, at which the algorithm considers the implementation succesful. If lower eps are possible, 
+        the algorithm will keep optimizing according to tol.
+    tol : float, optional, default is 1e-18
+        Tolerance for termination from scipy.optimize.
+    callback_num : int, optional, default is 1000
+        Number of iterations, at which the current voltage set will be as callback printed.
+    micro : float, optional, default is 1
+        If non 0, algorithm will attempt to compensate micromotion by keeping potential minima at the starting positions.
+        Coeff value coresponds to the input of minimum displacement in loss function, and should be evaluated emperically.
+        Approximate range: 0.001 to 10
+    voltage_bounds : tuple (float,float) or list of tuples len(number of dc electrodes), optional, default is (-15,15)
+        List of voltage bounds on each DC electrode. If tuple, then each electrode will be assigned the same bounds. 
+        Alternatively, each electrode can be assigned individual bounds as [(-bnds_1, bnds_1), (-bnds_2,bnds_2),...]
+
+    Returns
+    -------
+    dcset : list shape([number of dc electrodes])
+        Resulting DC voltage set.
+
+    """
+    try:
+        numbers[0]
+    except:
+        numbers = np.arange(len(start_dcset))
+        
+    numbers = np.array(numbers)
+    start_dcset = np.array(start_dcset)
     
-    return uset
+    def v_lossf(uset):
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            start_dcset[[numbers]] = uset
+            pbarn.update(1)
+            loss = 0
+            u_set = np.zeros(len([rfs for rfs in s.rfs if rfs != 0]))
+            u_set = np.concatenate([u_set, start_dcset])
+            
+            with s.with_voltages(dcs=u_set, rfs=None):
+                try:
+                    x1 = s.minimum(potential_minimum*1.001, axis=(0, 1, 2), coord=np.identity(3), method="Newton-CG",
+                                   tol = 1e-6, options = {'maxiter' : 2000})
+                    _, mod_dir = s.modes(x1, sorted=False)
+                    
+                    e1 = np.array([0,0,1])
+                    alp = np.arccos(np.inner(mod_dir[2],e1))
+                    
+                    loss += (alpha - alp)**2
+                    loss += micro * np.linalg.norm(x1 - potential_minimum)**2
+    
+                except: 
+                    loss += 10
+
+        return loss
+
+    count=[0]
+    def callback(intermediate_result):
+        pbar.update(1)
+        count[0] += 1
+        if count[0] % callback_num == 0:
+            print(f'Current loss = {intermediate_result.fun}')
+            print(f'Current uset = {list(intermediate_result.x)}')
+        return count
+
+    try:
+        voltage_bounds[0][0]
+        voltage_bounds=list(voltage_bounds)
+    except:
+        voltage_bounds = [(voltage_bounds[0],voltage_bounds[1]) for n in range(len(numbers))]
+
+    with tqdm(desc='Optimizing voltages', disable=True) as pbarn:
+        uset = np.array(start_dcset)[[numbers]]
+        initial_uset = uset[0]
+        print(f'Initial loss = {v_lossf(uset)}')
+    
+    with tqdm(desc='Optimizing voltages') as pbar:
+        with tqdm(desc='Optimizing voltages', disable=True) as pbarn:
+            res = minimize(v_lossf, initial_uset, method='L-BFGS-B', callback=callback, tol = tol, 
+                           bounds = voltage_bounds, options = {'maxiter' : 10000})
+            loss = res.fun
+            if loss > eps:
+                warnings.warn(f"\nMode mismatch above accuracy treshold {eps}\nTry decreasing tol or change micro or change initial guess or change trap geometry\nOptimization result: {res}")
+            
+            print(f'Final loss = {res.fun}')
+            uset = res.x
+            start_dcset[[numbers]] = uset
+            dcset = start_dcset
+            print(f'Final uset = {list(dcset)}')
+    
+    return dcset
+
+def position_optimization(s, positions, start_dcset, numbers=0, eps=1e-2, tol=1e-18,
+                          ion_masses=1, charges=1, callback_num=100, voltage_bounds=(-15,15)):
+    """
+    Optimizes set of voltages on specified electrodes, so that the potential minimum positions match the desired ones.
+
+    Parameters
+    ----------
+    s : electrode.System object
+        System object from *electrode* package, defining the trap
+    positions : list shape([number of positions, 3])
+        Positions of potential minima, at which ion frequencies are calculated
+    start_dcset : list shape([number of dc electrodes])
+        Starting DC voltages for the optimization (on all electrodes).
+    numbers : list shape([number of optimizing electrodes]) or int, optional, default is 0
+        list of the indeces of DC electrodes, used for optimization. If 0, all DC elecrtodes are used for optimization.
+    eps : float, optional, default is 1e-2
+        Maximal loss, at which the algorithm considers the implementation succesful. If lower eps are possible, 
+        the algorithm will keep optimizing according to tol.
+    tol : float, optional, default is 1e-18
+        Tolerance for termination from scipy.optimize.
+    ion_masses : np.array shape([ion number]) or float, optional, default is 1
+        Either array of ion masses for mixed species crystal, or a single ion mass for a single species crystal
+    charges : array shape([ion_number]) or int, optional, default is 1
+        Array of ion charges for crystals with varying charged, or a single charge for uniformly charged ions. 
+        Scaled for elementary charge. 
+    callback_num : int, optional, default is 100
+        Number of iterations, at which the current voltage set will be as callback printed.
+    voltage_bounds : tuple (float,float) or list of tuples len(number of dc electrodes), optional, default is (-15,15)
+        List of voltage bounds on each DC electrode. If tuple, then each electrode will be assigned the same bounds. 
+        Alternatively, each electrode can be assigned individual bounds as [(-bnds_1, bnds_1), (-bnds_2,bnds_2),...]
+
+    Returns
+    -------
+    dcset : list shape([number of dc electrodes])
+        Resulting DC voltage set.
+
+    """
+    positions = np.array(positions)
+    try:
+        numbers[0]
+    except:
+        numbers = np.arange(len(start_dcset))
+    
+    try:
+        M = ion_masses[0]
+    except:
+        ion_masses = np.ones(positions.shape[0])*ion_masses
+        M = ion_masses[0]
+    try:
+        Z = charges[0]
+    except:
+        charges = np.ones(positions.shape[0]) * charges
+        Z = charges[0]
+    
+    rf_set = s.rfs
+    numbers = np.array(numbers)
+    start_dcset = np.array(start_dcset)
+
+    def v_lossf(uset):
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            start_dcset[[numbers]] = uset
+            pbarn.update(1)
+            loss = 0
+            u_set = np.zeros(len([rfs for rfs in s.rfs if rfs != 0]))
+            u_set = np.concatenate([u_set, start_dcset])
+            
+            for i, pos in enumerate(positions):
+                with s.with_voltages(dcs=u_set, rfs=rf_set*np.sqrt(M*charges[i]/ion_masses[i]/Z)):
+                    try:
+                        x1 = s.minimum(pos*1.001, axis=(0, 1, 2), coord=np.identity(3), method="Newton-CG",
+                                    tol = 1e-9, options = {'maxiter' : 2000})                        
+                        loss += np.linalg.norm(x1-pos)**2
+        
+                    except: 
+                        loss += 1e6
+
+        return loss
+
+    count=[0]
+    def callback(intermediate_result):
+        pbar.update(1)
+        count[0] += 1
+        if count[0] % callback_num == 0:
+            print(f'Current loss = {intermediate_result.fun}')
+            print(f'Current uset = {list(intermediate_result.x)}')
+        return count
+
+    try:
+        voltage_bounds[0][0]
+        voltage_bounds=list(voltage_bounds)
+    except:
+        voltage_bounds = [(voltage_bounds[0],voltage_bounds[1]) for n in range(len(numbers))]
+
+  
+    with tqdm(desc='Optimizing voltages', disable=True) as pbarn:
+        uset = np.array(start_dcset)[[numbers]]
+        initial_uset = uset[0]
+        print(f'Initial loss = {v_lossf(uset)}')
+    
+    with tqdm(desc='Optimizing voltages') as pbar:
+        with tqdm(desc='Optimizing voltages', disable=True) as pbarn:
+            res = minimize(v_lossf, initial_uset, method='L-BFGS-B', 
+                           callback=callback, tol = tol, bounds = voltage_bounds, options = {'maxiter' : 10000})
+            loss = res.fun
+            if loss > eps:
+                warnings.warn(f"\nPosition mismatch above accuracy treshold {eps}\nTry decreasing tol or change start_dcset or change geometry\nOptimization result: {res}")
+            
+            print(f'Final loss = {res.fun}')
+            uset = res.x
+            start_dcset[[numbers]] = uset
+            dcset = start_dcset
+            print(f'Final uset = {list(dcset)}')
+    
+    return dcset

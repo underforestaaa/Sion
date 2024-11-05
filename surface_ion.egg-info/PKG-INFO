@@ -1,0 +1,67 @@
+Metadata-Version: 2.1
+Name: surface-ion
+Version: 1.0.0
+Summary: Python package for simulation and analysis of ion crystals in surface traps.
+Author: Artem Podlesnyy
+Author-email: a.podlesnyy@rqc.ru
+License: MIT license
+Keywords: surface trap,ion,quantum computing,ion simulation,normal modes,mathieu modes,ion shuttling,voltage optimization
+Classifier: Development Status :: 2 - Pre-Alpha
+Classifier: Intended Audience :: Researchers
+Classifier: License :: OSI Approved :: MIT License
+Classifier: Natural Language :: English
+Classifier: Programming Language :: Python :: 3.6
+License-File: LICENSE
+Requires-Dist: numpy>=1.13.3
+Requires-Dist: jinja2>=2.9.6
+Requires-Dist: scipy>=1.12.1
+Requires-Dist: scikit-optimize>=0.10.2
+Requires-Dist: electrode>=1.4
+Requires-Dist: matplotlib>=3.9.2
+Requires-Dist: gdspy>=1.6.13
+Requires-Dist: shapely>=2.0.6
+Requires-Dist: tqdm>=4.66.6
+Requires-Dist: wexpect
+
+# *Sion* package
+
+Python package for simulation and analysis of ion crystals in surface electrode traps.
+
+## Installation
+
+To use *Sion*, the following packages are required to be installed from source and tested:
+- [pylion package](https://bitbucket.org/dtrypogeorgos/pylion/src/master/): LAMMPS wrapper for ion dynamics simulation. This package requires installation of LAMMPS software with the specific version. It will work well with the latest LAMMPS version, if in source file *pylion.py* at line 51 you change "lmp_serial" to "lmp".  
+- [electrode package](https://github.com/nist-ionstorage/electrode): Python package for convenient definition and analysis of surface electrode traps.  
+!Note: for correct execution of these packages, numpy<=1.21.0 is recquired. Alternatively one may install 
+
+The newest version may be installed via pip:  
+<code>pip install surface-ion</code>
+
+
+## Getting started
+
+*Sion* works with surface traps, defined through the *electrode* package. The simulation of ion dynamics is carried through the *pylion* environment.
+All functions, presented in *Sion* are described in example notebooks. Main file *sion.py* containes docs for each function.
+
+To publish the results, obtained with *Sion*, the following articles should be cited:
+1. [Surface trap with adjustable ion couplings for scalable and parallel gates](https://journals.aps.org/pra/abstract/10.1103/PhysRevA.109.022605)
+
+
+## Features
+*   Simulation of ion motion in arbitrary polygon and point electrode surface trap.
+*   Optimization and simulation of arbitrary ion shuttling in polygon traps.
+*   Calculation of normal modes for general case of 1D, 2D, 3D mixed species ion crystals with arbitrary set of ions' secular frequencies.
+*   Calculation of anharmonic mathieu modes of ion crystals in surface traps.  
+*   Stability analysis of asymmetric planar traps.
+*   Optimization of DC voltage set of a planar trap to match the desired secular frequency and radial mode rotation angle in given positions.
+*   Convenient trap design. Layout may be imported from GDS file or created by defining the arbitrary electrode shape boundary. 
+
+## File structure
+
+*  'build/lib/sion.py': contains all the main functions.
+
+*  'examples': examples showing different features of *Sion*.
+
+*  'tests': verifications and tests of *Sion* work.
+
+Free software: MIT license

@@ -13,45 +13,41 @@ with open('readme.md') as readme_file:
 
 
 requirements = [
-    'h5py>=2.7.0',
-    'termcolor>=1.1.0',
-    'numpy>=1.13.1',
+    'numpy>=1.13.3',
     'jinja2>=2.9.6',
+    'scipy>=1.12.1',
+    'scikit-optimize>=0.10.2',
+    'electrode>=1.4',
+    'matplotlib>=3.9.2',
+    'gdspy>=1.6.13',
+    'shapely>=2.0.6',
+    'tqdm>=4.66.6'
 ] + expect
 
-setup_requirements = [
-    # TODO put setup requirements (distutils extensions, etc.) here
-]
-
-test_requirements = [
-    # TODO: put package test requirements here
-]
 
 short_description = (
-    "A LAMMPS wrapper for molecular dynamics simulations of trapped ions in planar traps.")
+    "Python package for simulation and analysis of ion crystals in surface traps.")
 
 setup(
-    name='sion',
-    version='0.5.0',
+    name='surface-ion',
+    version='1.0.0',
     description=short_description,
     long_description=readme,
     author="Artem Podlesnyy",
     author_email='a.podlesnyy@rqc.ru',
-    packages=find_packages(include=['sion']),
-    package_data={'sion': ['templates/*j2']},
+    packages=find_packages(include=['surface-ion']),
+    package_data={'surface-ion': ['templates/*j2']},
     include_package_data=True,
     install_requires=requirements,
     license="MIT license",
-    zip_safe=False,
-    keywords='sion',
+    keywords=['surface trap', 'ion', 'quantum computing', 'ion simulation', 
+              'normal modes', 'mathieu modes', 'ion shuttling', 'voltage optimization'],
     classifiers=[
         'Development Status :: 2 - Pre-Alpha',
-        'Intended Audience :: Developers',
+        'Intended Audience :: Researchers',
         'License :: OSI Approved :: MIT License',
         'Natural Language :: English',
         'Programming Language :: Python :: 3.6',
     ],
     test_suite='tests',
-    tests_require=test_requirements,
-    setup_requires=setup_requirements,
 )
