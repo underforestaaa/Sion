@@ -1,16 +1,18 @@
 Metadata-Version: 2.1
 Name: surface-ion
-Version: 1.0.0
+Version: 1.0.3
 Summary: Python package for simulation and analysis of ion crystals in surface traps.
+Home-page: https://github.com/underforestaaa/Sion
 Author: Artem Podlesnyy
 Author-email: a.podlesnyy@rqc.ru
 License: MIT license
 Keywords: surface trap,ion,quantum computing,ion simulation,normal modes,mathieu modes,ion shuttling,voltage optimization
 Classifier: Development Status :: 2 - Pre-Alpha
-Classifier: Intended Audience :: Researchers
+Classifier: Intended Audience :: Developers
 Classifier: License :: OSI Approved :: MIT License
 Classifier: Natural Language :: English
 Classifier: Programming Language :: Python :: 3.6
+Description-Content-Type: text/markdown
 License-File: LICENSE
 Requires-Dist: numpy>=1.13.3
 Requires-Dist: jinja2>=2.9.6
