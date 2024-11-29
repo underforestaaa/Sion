@@ -2029,7 +2029,7 @@ def equilibrium_ion_positions(s, dc_set, ion_masses, ion_number, potential_minim
 
             x_min = s.minimum(potential_minimum, method='Newton-CG')
             curv_z, mod_dir = s.modes(x_min, sorted=False)
-            omega_sec=np.sqrt(ct.e*curv_z/ion_masses[0])/(L)
+            omega_sec=np.sqrt(charges[0]*ct.e*curv_z/ion_masses[0])/(L)
             l = (ct.e**2/(4*np.pi*ct.epsilon_0*ion_masses[0]*omega_sec[0]**2))**(1/3)/L
             positions_guess = np.zeros([N,3])
 
@@ -2077,7 +2077,7 @@ def hessian(ion_positions, omega_sec, ion_masses, charges):
     M_matrix = np.diag(list(np.array(ion_masses)**(-0.5))*3)
 
     def d(i, j):
-        return np.linalg.norm(ion_positions[i] - ion_positions[j])/(charges[i]*charges[j])
+        return np.linalg.norm(ion_positions[i] - ion_positions[j])/1
     a1 = []
     for i in range(N):
         alpha = (ion_masses[i]*omega_sec[i][0]**2) / \

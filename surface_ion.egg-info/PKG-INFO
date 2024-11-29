@@ -1,6 +1,6 @@
 Metadata-Version: 2.1
 Name: surface-ion
-Version: 1.0.4
+Version: 1.0.5
 Summary: Python package for simulation and analysis of ion crystals in surface traps.
 Home-page: https://github.com/underforestaaa/Sion
 Author: Artem Podlesnyy
@@ -19,7 +19,7 @@ Requires-Dist: cython>=3.0.1
 Requires-Dist: jinja2>=2.9.6
 Requires-Dist: scipy>=1.12.1
 Requires-Dist: scikit-optimize>=0.10.2
-Requires-Dist: matplotlib>=3.9.2
+Requires-Dist: matplotlib>=3.0.2
 Requires-Dist: gdspy>=1.6.13
 Requires-Dist: shapely>=2.0.6
 Requires-Dist: tqdm>=4.66.6
@@ -45,11 +45,13 @@ The newest version may be installed via pip:
 *Sion* works with surface traps, defined through the *electrode* package. The simulation of ion dynamics is carried through the *pylion* environment.
 All functions, presented in *Sion* are described in example notebooks. Main file *sion.py* contains docs for each function.
 
-To publish the results, obtained with *Sion*, the following articles should be cited:
+To publish the results, obtained with *Sion*, we kindly ask you to cite the following article:
 1. [Surface trap with adjustable ion couplings for scalable and parallel gates](https://journals.aps.org/pra/abstract/10.1103/PhysRevA.109.022605)
 
+Free software: MIT license
 
 ## Features
+
 *   Simulation of ion motion in arbitrary polygon and point electrode surface trap.
 *   Optimization and simulation of arbitrary ion shuttling in polygon traps.
 *   Calculation of normal modes for general case of 1D, 2D, 3D mixed species ion crystals with arbitrary set of ions' secular frequencies.
@@ -66,4 +68,9 @@ To publish the results, obtained with *Sion*, the following articles should be c
 
 *  'tests': verifications and tests of *Sion* work.
 
-Free software: MIT license
+## Possible issues
+
+*  The following error may occur from trying to execute simulation two times without restarting the kernel. It is specific to IPython IDEs (Jupyter, spyder). The error source is in pylion package, and will be resolved by restarting the kernel.
+
+<code>SimulationError: There are identical 'uids'. Although this is allowed in some  cases, 'lammps' is probably not going to like it.</code>
+

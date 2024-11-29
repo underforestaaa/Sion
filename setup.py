@@ -18,7 +18,7 @@ requirements = [
     'jinja2>=2.9.6',
     'scipy>=1.12.1',
     'scikit-optimize>=0.10.2',
-    'matplotlib>=3.9.2',
+    'matplotlib>=3.0.2',
     'gdspy>=1.6.13',
     'shapely>=2.0.6',
     'tqdm>=4.66.6'
@@ -30,7 +30,7 @@ short_description = (
 
 setup(
     name='surface-ion',
-    version='1.0.4',
+    version='1.0.5',
     description=short_description,
     long_description=readme,
     long_description_content_type='text/markdown',
