@@ -128,6 +128,12 @@ def polygon_trap(uid, Omega, rf_voltages, dc_voltages, RFs, DCs, cover=(0, 0)):
         xc = ' + '.join(xc)
         yc = ' + '.join(yc)
         zc = ' + '.join(zc)
+        if len(xc) == 0:
+            xc = '0'
+        if len(yc) == 0:
+            yc = '0'
+        if len(zc) == 0:
+            zc = '0'
         
         xcc.append(f'({u_set[iterr]/np.pi:e})*({xc})*cos(v_phase{uid}{iterr:d})')
         ycc.append(f'({u_set[iterr]/np.pi:e})*({yc})*cos(v_phase{uid}{iterr:d})')
@@ -195,7 +201,9 @@ def polygon_trap(uid, Omega, rf_voltages, dc_voltages, RFs, DCs, cover=(0, 0)):
     
     if len(xr) == 0:
         xr = '0'
+    if len(yr) == 0:
         yr = '0'
+    if len(zr) == 0:
         zr = '0'
 
     lines.append(f'variable oscEX{uid} atom "{xcc}+{xr}"')

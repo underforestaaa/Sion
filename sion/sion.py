@@ -128,6 +128,12 @@ def polygon_trap(uid, Omega, rf_voltages, dc_voltages, RFs, DCs, cover=(0, 0)):
         xc = ' + '.join(xc)
         yc = ' + '.join(yc)
         zc = ' + '.join(zc)
+        if len(xc) == 0:
+            xc = '0'
+        if len(yc) == 0:
+            yc = '0'
+        if len(zc) == 0:
+            zc = '0'
         
         xcc.append(f'({u_set[iterr]/np.pi:e})*({xc})*cos(v_phase{uid}{iterr:d})')
         ycc.append(f'({u_set[iterr]/np.pi:e})*({yc})*cos(v_phase{uid}{iterr:d})')
@@ -195,7 +201,9 @@ def polygon_trap(uid, Omega, rf_voltages, dc_voltages, RFs, DCs, cover=(0, 0)):
     
     if len(xr) == 0:
         xr = '0'
+    if len(yr) == 0:
         yr = '0'
+    if len(zr) == 0:
         zr = '0'
 
     lines.append(f'variable oscEX{uid} atom "{xcc}+{xr}"')
@@ -2077,60 +2085,60 @@ def hessian(ion_positions, omega_sec, ion_masses, charges):
     M_matrix = np.diag(list(np.array(ion_masses)**(-0.5))*3)
 
     def d(i, j):
-        return np.linalg.norm(ion_positions[i] - ion_positions[j])/1
+        return np.linalg.norm(ion_positions[i] - ion_positions[j])
     a1 = []
     for i in range(N):
         alpha = (ion_masses[i]*omega_sec[i][0]**2) / \
             (ion_masses[0]*omega_sec[0][2]**2)
         for p in range(N):
             if i != p:
-                alpha += -1 / \
+                alpha += (-1 / \
                     d(i, p)**3+3*(ion_positions[i][0] -
-                                  ion_positions[p][0])**2/(d(i, p)**5)
+                                  ion_positions[p][0])**2/(d(i, p)**5))*(charges[i]*charges[p])
         a1.append(alpha)
     for i in range(N):
         alpha = (ion_masses[i]*omega_sec[i][1]**2) / \
             (ion_masses[0]*omega_sec[0][2]**2)
         for p in range(N):
             if i != p:
-                alpha += -1 / \
+                alpha += (-1 / \
                     d(i, p)**3+3*(ion_positions[i][1] -
-                                  ion_positions[p][1])**2/(d(i, p)**5)
+                                  ion_positions[p][1])**2/(d(i, p)**5))*(charges[i]*charges[p])
         a1.append(alpha)
     for i in range(N):
         alpha = (ion_masses[i]*omega_sec[i][2]**2) / \
             (ion_masses[0]*omega_sec[0][2]**2)
         for p in range(N):
             if i != p:
-                alpha += -1 / \
+                alpha += (-1 / \
                     d(i, p)**3+3*(ion_positions[i][2] -
-                                  ion_positions[p][2])**2/(d(i, p)**5)
+                                  ion_positions[p][2])**2/(d(i, p)**5))*(charges[i]*charges[p])
         a1.append(alpha)
     A_matrix = np.diag(a1)
 
     for i in range(N):
         for j in range(N):
             if j != i:
-                A_matrix[i][j] = 1/d(i, j)**3 - 3*(ion_positions[i]
-                                                   [0] - ion_positions[j][0])**2/d(i, j)**5
-                A_matrix[N+i][N+j] = 1/d(i, j)**3 - 3*(ion_positions[i]
-                                                       [1] - ion_positions[j][1])**2/d(i, j)**5
-                A_matrix[2*N+i][2*N+j] = 1/d(i, j)**3 - 3*(
-                    ion_positions[i][2] - ion_positions[j][2])**2/d(i, j)**5
-                A_matrix[i][N+j] = 3*(ion_positions[i][0] - ion_positions[j][0])*(
-                    ion_positions[j][1] - ion_positions[i][1])/d(i, j)**5
-                A_matrix[i+N][j] = 3*(ion_positions[i][0] - ion_positions[j][0])*(
-                    ion_positions[j][1] - ion_positions[i][1])/d(i, j)**5
+                A_matrix[i][j] = (1/d(i, j)**3 - 3*(ion_positions[i]
+                                                   [0] - ion_positions[j][0])**2/d(i, j)**5)*(charges[i]*charges[j])
+                A_matrix[N+i][N+j] = (1/d(i, j)**3 - 3*(ion_positions[i]
+                                                       [1] - ion_positions[j][1])**2/d(i, j)**5)*(charges[i]*charges[j])
+                A_matrix[2*N+i][2*N+j] = (1/d(i, j)**3 - 3*(
+                    ion_positions[i][2] - ion_positions[j][2])**2/d(i, j)**5)*(charges[i]*charges[j])
+                A_matrix[i][N+j] = (3*(ion_positions[i][0] - ion_positions[j][0])*(
+                    ion_positions[j][1] - ion_positions[i][1])/d(i, j)**5)*(charges[i]*charges[j])
+                A_matrix[i+N][j] = (3*(ion_positions[i][0] - ion_positions[j][0])*(
+                    ion_positions[j][1] - ion_positions[i][1])/d(i, j)**5)*(charges[i]*charges[j])
 
-                A_matrix[i][2*N + j] = 3 * (ion_positions[i][0] - ion_positions[j][0]) * (
-                    ion_positions[j][2] - ion_positions[i][2]) / d(i, j) ** 5
-                A_matrix[2 * N + i][j] = 3 * (ion_positions[i][0] - ion_positions[j][0]) * (
-                    ion_positions[j][2] - ion_positions[i][2]) / d(i, j) ** 5
+                A_matrix[i][2*N + j] = (3 * (ion_positions[i][0] - ion_positions[j][0]) * (
+                    ion_positions[j][2] - ion_positions[i][2]) / d(i, j) ** 5)*(charges[i]*charges[j])
+                A_matrix[2 * N + i][j] = (3 * (ion_positions[i][0] - ion_positions[j][0]) * (
+                    ion_positions[j][2] - ion_positions[i][2]) / d(i, j) ** 5)*(charges[i]*charges[j])
 
-                A_matrix[2*N+i][N + j] = 3 * (ion_positions[i][2] - ion_positions[j][2]) * (
-                    ion_positions[j][1] - ion_positions[i][1]) / d(i, j) ** 5
-                A_matrix[N + i][2*N + j] = 3 * (ion_positions[i][2] - ion_positions[j][2]) * (
-                    ion_positions[j][1] - ion_positions[i][1]) / d(i, j) ** 5
+                A_matrix[2*N+i][N + j] = (3 * (ion_positions[i][2] - ion_positions[j][2]) * (
+                    ion_positions[j][1] - ion_positions[i][1]) / d(i, j) ** 5)*(charges[i]*charges[j])
+                A_matrix[N + i][2*N + j] = (3 * (ion_positions[i][2] - ion_positions[j][2]) * (
+                    ion_positions[j][1] - ion_positions[i][1]) / d(i, j) ** 5)*(charges[i]*charges[j])
 
         A1 = 0
         A2 = 0
@@ -2138,12 +2146,12 @@ def hessian(ion_positions, omega_sec, ion_masses, charges):
 
         for p in range(N):
             if i != p:
-                A1 += 3*(ion_positions[i][0] - ion_positions[p][0]) * \
-                    (ion_positions[i][1] - ion_positions[p][1])/d(i, p)**5
-                A2 += 3 * (ion_positions[i][0] - ion_positions[p][0]) * (
-                    ion_positions[i][2] - ion_positions[p][2]) / d(i, p) ** 5
-                A3 += 3 * (ion_positions[i][2] - ion_positions[p][2]) * (
-                    ion_positions[i][1] - ion_positions[p][1]) / d(i, p) ** 5
+                A1 += (3*(ion_positions[i][0] - ion_positions[p][0]) * \
+                    (ion_positions[i][1] - ion_positions[p][1])/d(i, p)**5)*(charges[i]*charges[p])
+                A2 += (3 * (ion_positions[i][0] - ion_positions[p][0]) * (
+                    ion_positions[i][2] - ion_positions[p][2]) / d(i, p) ** 5)*(charges[i]*charges[p])
+                A3 += (3 * (ion_positions[i][2] - ion_positions[p][2]) * (
+                    ion_positions[i][1] - ion_positions[p][1]) / d(i, p) ** 5)*(charges[i]*charges[p])
 
         A_matrix[i][N+i] = A1
         A_matrix[N+i][i] = A1
@@ -2309,57 +2317,57 @@ def coulumb_hessian(ion_positions, charges):
     N = len([len(a) for a in ion_positions])
 
     def d(i, j):
-        return np.linalg.norm(ion_positions[i] - ion_positions[j])/(charges[i]*charges[j])
+        return np.linalg.norm(ion_positions[i] - ion_positions[j])
     a1 = []
     for i in range(N):
         alpha = 0
         for p in range(N):
             if i != p:
-                alpha += -1 / \
+                alpha += (-1 / \
                     d(i, p)**3+3*(ion_positions[i][0] -
-                                  ion_positions[p][0])**2/(d(i, p)**5)
+                                  ion_positions[p][0])**2/(d(i, p)**5))*(charges[i]*charges[p])
         a1.append(alpha)
     for i in range(N):
         alpha = 0
         for p in range(N):
             if i != p:
-                alpha += -1 / \
+                alpha += (-1 / \
                     d(i, p)**3+3*(ion_positions[i][1] -
-                                  ion_positions[p][1])**2/(d(i, p)**5)
+                                  ion_positions[p][1])**2/(d(i, p)**5))*(charges[i]*charges[p])
         a1.append(alpha)
     for i in range(N):
         alpha = 0
         for p in range(N):
             if i != p:
-                alpha += -1 / \
+                alpha += (-1 / \
                     d(i, p)**3+3*(ion_positions[i][2] -
-                                  ion_positions[p][2])**2/(d(i, p)**5)
+                                  ion_positions[p][2])**2/(d(i, p)**5))*(charges[i]*charges[p])
         a1.append(alpha)
     A_matrix = np.diag(a1)
 
     for i in range(N):
         for j in range(N):
             if j != i:
-                A_matrix[i][j] = 1/d(i, j)**3 - 3*(ion_positions[i]
-                                                   [0] - ion_positions[j][0])**2/d(i, j)**5
-                A_matrix[N+i][N+j] = 1/d(i, j)**3 - 3*(ion_positions[i]
-                                                       [1] - ion_positions[j][1])**2/d(i, j)**5
-                A_matrix[2*N+i][2*N+j] = 1/d(i, j)**3 - 3*(
-                    ion_positions[i][2] - ion_positions[j][2])**2/d(i, j)**5
-                A_matrix[i][N+j] = 3*(ion_positions[i][0] - ion_positions[j][0])*(
-                    ion_positions[j][1] - ion_positions[i][1])/d(i, j)**5
-                A_matrix[i+N][j] = 3*(ion_positions[i][0] - ion_positions[j][0])*(
-                    ion_positions[j][1] - ion_positions[i][1])/d(i, j)**5
+                A_matrix[i][j] = (1/d(i, j)**3 - 3*(ion_positions[i]
+                                                   [0] - ion_positions[j][0])**2/d(i, j)**5)*(charges[i]*charges[j])
+                A_matrix[N+i][N+j] = (1/d(i, j)**3 - 3*(ion_positions[i]
+                                                       [1] - ion_positions[j][1])**2/d(i, j)**5)*(charges[i]*charges[j])
+                A_matrix[2*N+i][2*N+j] = (1/d(i, j)**3 - 3*(
+                    ion_positions[i][2] - ion_positions[j][2])**2/d(i, j)**5)*(charges[i]*charges[j])
+                A_matrix[i][N+j] = (3*(ion_positions[i][0] - ion_positions[j][0])*(
+                    ion_positions[j][1] - ion_positions[i][1])/d(i, j)**5)*(charges[i]*charges[j])
+                A_matrix[i+N][j] = (3*(ion_positions[i][0] - ion_positions[j][0])*(
+                    ion_positions[j][1] - ion_positions[i][1])/d(i, j)**5)*(charges[i]*charges[j])
 
-                A_matrix[i][2*N + j] = 3 * (ion_positions[i][0] - ion_positions[j][0]) * (
-                    ion_positions[j][2] - ion_positions[i][2]) / d(i, j) ** 5
-                A_matrix[2 * N + i][j] = 3 * (ion_positions[i][0] - ion_positions[j][0]) * (
-                    ion_positions[j][2] - ion_positions[i][2]) / d(i, j) ** 5
+                A_matrix[i][2*N + j] = (3 * (ion_positions[i][0] - ion_positions[j][0]) * (
+                    ion_positions[j][2] - ion_positions[i][2]) / d(i, j) ** 5)*(charges[i]*charges[j])
+                A_matrix[2 * N + i][j] = (3 * (ion_positions[i][0] - ion_positions[j][0]) * (
+                    ion_positions[j][2] - ion_positions[i][2]) / d(i, j) ** 5)*(charges[i]*charges[j])
 
-                A_matrix[2*N+i][N + j] = 3 * (ion_positions[i][2] - ion_positions[j][2]) * (
-                    ion_positions[j][1] - ion_positions[i][1]) / d(i, j) ** 5
-                A_matrix[N + i][2*N + j] = 3 * (ion_positions[i][2] - ion_positions[j][2]) * (
-                    ion_positions[j][1] - ion_positions[i][1]) / d(i, j) ** 5
+                A_matrix[2*N+i][N + j] = (3 * (ion_positions[i][2] - ion_positions[j][2]) * (
+                    ion_positions[j][1] - ion_positions[i][1]) / d(i, j) ** 5)*(charges[i]*charges[j])
+                A_matrix[N + i][2*N + j] = (3 * (ion_positions[i][2] - ion_positions[j][2]) * (
+                    ion_positions[j][1] - ion_positions[i][1]) / d(i, j) ** 5)*(charges[i]*charges[j])
 
         A1 = 0
         A2 = 0
@@ -2367,12 +2375,12 @@ def coulumb_hessian(ion_positions, charges):
 
         for p in range(N):
             if i != p:
-                A1 += 3*(ion_positions[i][0] - ion_positions[p][0]) * \
-                    (ion_positions[i][1] - ion_positions[p][1])/d(i, p)**5
-                A2 += 3 * (ion_positions[i][0] - ion_positions[p][0]) * (
-                    ion_positions[i][2] - ion_positions[p][2]) / d(i, p) ** 5
-                A3 += 3 * (ion_positions[i][2] - ion_positions[p][2]) * (
-                    ion_positions[i][1] - ion_positions[p][1]) / d(i, p) ** 5
+                A1 += (3*(ion_positions[i][0] - ion_positions[p][0]) * \
+                    (ion_positions[i][1] - ion_positions[p][1])/d(i, p)**5)*(charges[i]*charges[p])
+                A2 += (3 * (ion_positions[i][0] - ion_positions[p][0]) * (
+                    ion_positions[i][2] - ion_positions[p][2]) / d(i, p) ** 5)*(charges[i]*charges[p])
+                A3 += (3 * (ion_positions[i][2] - ion_positions[p][2]) * (
+                    ion_positions[i][1] - ion_positions[p][1]) / d(i, p) ** 5)*(charges[i]*charges[p])
 
         A_matrix[i][N+i] = A1
         A_matrix[N+i][i] = A1
