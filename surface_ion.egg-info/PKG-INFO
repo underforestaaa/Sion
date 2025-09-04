@@ -1,12 +1,13 @@
 Metadata-Version: 2.1
 Name: surface-ion
-Version: 1.0.5
+Version: 1.0.6
 Summary: Python package for simulation and analysis of ion crystals in surface traps.
 Home-page: https://github.com/underforestaaa/Sion
 Author: Artem Podlesnyy
 Author-email: a.podlesnyy@rqc.ru
 License: MIT license
 Keywords: surface trap,ion,quantum computing,ion simulation,normal modes,mathieu modes,ion shuttling,voltage optimization
+Platform: UNKNOWN
 Classifier: Development Status :: 2 - Pre-Alpha
 Classifier: Intended Audience :: Developers
 Classifier: License :: OSI Approved :: MIT License
@@ -14,16 +15,6 @@ Classifier: Natural Language :: English
 Classifier: Programming Language :: Python :: 3.6
 Description-Content-Type: text/markdown
 License-File: LICENSE
-Requires-Dist: numpy>=1.13.3
-Requires-Dist: cython>=3.0.1
-Requires-Dist: jinja2>=2.9.6
-Requires-Dist: scipy>=1.12.1
-Requires-Dist: scikit-optimize>=0.10.2
-Requires-Dist: matplotlib>=3.0.2
-Requires-Dist: gdspy>=1.6.13
-Requires-Dist: shapely>=2.0.6
-Requires-Dist: tqdm>=4.66.6
-Requires-Dist: wexpect
 
 # *Sion* package
 
@@ -73,4 +64,6 @@ Free software: MIT license
 *  The following error may occur from trying to execute simulation two times without restarting the kernel. It is specific to IPython IDEs (Jupyter, spyder). The error source is in pylion package, and will be resolved by restarting the kernel.
 
 <code>SimulationError: There are identical 'uids'. Although this is allowed in some  cases, 'lammps' is probably not going to like it.</code>
+
+
 

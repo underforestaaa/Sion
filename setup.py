@@ -13,15 +13,15 @@ with open('readme.md') as readme_file:
 
 
 requirements = [
-    'numpy>=1.13.3',
-    'cython>=3.0.1',
-    'jinja2>=2.9.6',
-    'scipy>=1.12.1',
-    'scikit-optimize>=0.10.2',
-    'matplotlib>=3.0.2',
-    'gdspy>=1.6.13',
-    'shapely>=2.0.6',
-    'tqdm>=4.66.6'
+    'numpy>=1.13',
+    'cython>=3.0',
+    'jinja2>=2.9',
+    'scipy>=1.10',
+    'scikit-optimize>=0.10',
+    'matplotlib>=3.0',
+    'gdspy>=1.6',
+    'shapely>=2.0',
+    'tqdm>=4.66'
 ] + expect
 
 
