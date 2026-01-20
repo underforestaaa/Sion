@@ -1,29 +1,44 @@
-Metadata-Version: 2.1
+Metadata-Version: 2.4
 Name: surface-ion
-Version: 1.0.5
+Version: 1.1.0
 Summary: Python package for simulation and analysis of ion crystals in surface traps.
 Home-page: https://github.com/underforestaaa/Sion
 Author: Artem Podlesnyy
 Author-email: a.podlesnyy@rqc.ru
-License: MIT license
-Keywords: surface trap,ion,quantum computing,ion simulation,normal modes,mathieu modes,ion shuttling,voltage optimization
-Classifier: Development Status :: 2 - Pre-Alpha
-Classifier: Intended Audience :: Developers
-Classifier: License :: OSI Approved :: MIT License
+Maintainer-email: Artem Podlesnyy <a.podlesnyy@rqc.ru>
+License-Expression: GPL-3.0-or-later
+Project-URL: repository, https://github.com/underforestaaa/Sion
+Classifier: Development Status :: 3 - Alpha
+Classifier: Intended Audience :: Science/Research
 Classifier: Natural Language :: English
-Classifier: Programming Language :: Python :: 3.6
+Classifier: Operating System :: POSIX
+Classifier: Operating System :: MacOS :: MacOS X
+Classifier: Operating System :: POSIX :: Linux
+Classifier: Operating System :: Microsoft :: Windows
+Classifier: Programming Language :: Python :: 3.9
+Classifier: Topic :: Scientific/Engineering :: Physics
+Requires-Python: >=3.9
 Description-Content-Type: text/markdown
 License-File: LICENSE
-Requires-Dist: numpy>=1.13.3
-Requires-Dist: cython>=3.0.1
+Requires-Dist: numpy>=1.23
+Requires-Dist: cython>=3.0
 Requires-Dist: jinja2>=2.9.6
-Requires-Dist: scipy>=1.12.1
+Requires-Dist: scipy>=1.12
+Requires-Dist: h5py>=2.7.0
+Requires-Dist: termcolor>=1.1.0
 Requires-Dist: scikit-optimize>=0.10.2
-Requires-Dist: matplotlib>=3.0.2
-Requires-Dist: gdspy>=1.6.13
-Requires-Dist: shapely>=2.0.6
-Requires-Dist: tqdm>=4.66.6
-Requires-Dist: wexpect
+Requires-Dist: matplotlib>=3.0
+Requires-Dist: gdspy>=1.6
+Requires-Dist: shapely>=2.0
+Requires-Dist: tqdm>=4.66
+Requires-Dist: nose>=1.0
+Requires-Dist: sphinx>=8.0
+Requires-Dist: numpydoc>=1.0
+Requires-Dist: cvxopt>=1
+Dynamic: author
+Dynamic: author-email
+Dynamic: home-page
+Dynamic: license-file
 
 # *Sion* package
 

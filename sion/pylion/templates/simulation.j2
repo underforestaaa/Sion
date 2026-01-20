@@ -1,0 +1,67 @@
+##################################################################
+# LAMMPS input file generated using pylion {{ version }}
+# simulation name: {{ name }}
+#
+# pylion is written and maintained by Dimitris Trypogeorgos
+# and Elliot Bentine. Download it from
+# https://bitbucket.org/dtrypogeorgos/pylion
+#
+# If you find it useful please cite <paper>.
+##################################################################
+
+{% if gpu %}
+# Enabling GPU acceleration via CUDA...
+package gpu 1
+suffix gpu
+{% endif %}
+
+units si
+atom_style charge
+
+# Creating simulation box...
+boundary m m m
+region simulationDomain block {{ -domain[0] }}  {{ domain[0] }} {{ -domain[1] }} {{ domain[1] }} {{ -domain[2] }} {{ domain[2] }} units box
+create_box {{ species|length }} simulationDomain
+
+# Configure neighbour list...
+neighbor {{ neighbour.skin }} {{ neighbour.list }}
+neigh_modify once yes
+
+# Configure pairwise interactions for long range Coulombics only...
+pair_style coul/cut {{ coulombcutoff }}
+pair_coeff * *
+
+# Placing individual ions...
+{% for ions in species %}
+{% for position in ions.positions %}
+create_atoms {{ ions.uid }} single {{ position|join(' ') }} units box
+{% endfor %}
+
+# Species...
+mass {{ ions.uid }} {{ 1.660539*10**(-27) * ions.mass }}
+set type {{ ions.uid }} charge {{ 1.60217646*10**(-19) * ions.charge }}
+group {{ ions.uid }} type {{ ions.uid }}
+
+{% endfor %}
+timestep {{ timestep }}
+
+# Configuring additional output to flush buffer during simulation...
+thermo 10000
+thermo_style custom step cpu
+thermo_modify flush yes
+
+# Time integration...
+{% if rigid.exists %}
+group rigidAtoms union {{ rigid.groups|join(' ') }}
+fix rigidIntegrator rigidAtoms rigid group {{ rigid.groups|length }} {{ rigid.groups|join(' ') }}
+group nonRigidBody subtract all {{ rigid.groups|join(' ') }}
+{% else %}
+group nonRigidBody union all
+{% endif %}
+fix timeIntegrator nonRigidBody nve
+
+{% for item in simulation %}
+{% for line in item.code %}
+{{ line }}
+{% endfor %}
+{% endfor %}
