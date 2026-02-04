@@ -25,6 +25,8 @@ dependencies = [
     "sphinx>=8.0",
     "numpydoc>=1.0",
     "cvxopt>=1",
+    "wexpect; sys_platform == 'win32'",
+    "pexpect>=4.2.1; sys_platform != 'win32'",
 #    "mayavi>=4",
 ]
 classifiers = [
@@ -48,6 +50,9 @@ repository = "https://github.com/underforestaaa/Sion"
 [tool.setuptools]
 packages = ["sion", "sion.electrode", "sion.pylion"]
 include-package-data = true
+
+[tool.setuptools.package-data]
+sion.pylion = ["templates/*.j2"]
 py-modules = []
 #ext-modules = [
 #  {name = "electrode._transformations", sources = ["sion/electrode/transformations.c"]}, 

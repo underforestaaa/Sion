@@ -48,6 +48,7 @@ setup(
     author_email='a.podlesnyy@rqc.ru',
     url='https://github.com/underforestaaa/Sion',
     packages=find_packages(include=['sion', "sion.electrode", "sion.pylion"]),
+    package_data={'sion.pylion': ['templates/*.j2']},
     install_requires=requirements,
     license="GPLv3+",
     keywords=['surface trap', 'ion', 'quantum computing', 'ion simulation',

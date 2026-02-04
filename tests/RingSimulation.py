@@ -8,12 +8,12 @@ the increase time, required for the simulation.
 
 
 from __future__ import division
-import pylion as pl
+import sion.pylion as pl
 from pathlib import Path
 import matplotlib as mpl
 import matplotlib.pyplot as plt, numpy as np, scipy.constants as ct
 from mpl_toolkits.mplot3d import Axes3D
-from electrode import (System, PolygonPixelElectrode, PointPixelElectrode)
+from sion.electrode import (System, PolygonPixelElectrode, PointPixelElectrode)
 
 import sion as sn
 

@@ -6,12 +6,12 @@ axial_ and radial_normal_modes(), and verified with theoretical analysis.
 """
 
 from __future__ import division
-import pylion as pl
+import sion.pylion as pl
 from pathlib import Path
 import matplotlib.pyplot as plt, numpy as np, scipy.constants as ct
-from electrode import (System, PolygonPixelElectrode, euler_matrix,
-                       PointPixelElectrode, PotentialObjective,
-                       PatternRangeConstraint, shaped)
+from sion.electrode import (System, PolygonPixelElectrode, euler_matrix,
+                            PointPixelElectrode, PotentialObjective,
+                            PatternRangeConstraint, shaped)
 import sion as sn
 
 

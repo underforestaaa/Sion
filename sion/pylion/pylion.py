@@ -1,12 +1,5 @@
 # Modified for SION.
-#
-# How to use this pylion (MPI/OMP, execute kwargs):
-#   1) Run from repo: prepend repo root to sys.path, then "import sion.pylion as pl".
-#      See examples/minimal_paralleling_simulation.py.
-#   2) Or "pip install -e ." from repo root; then "import sion.pylion as pl" works anywhere.
-#   API: pl.Simulation(name), sim.set_parallel(mpi_processes=N, omp_threads=M),
-#        sim.execute(mpi_processes=N, omp_threads=M).
-#
+
 from sys import platform
 # namespace so code can keep using sys.xxx
 class _Sys:
@@ -249,7 +242,7 @@ class Simulation(list):
                 "'uid' count unless it is for the same ion group.")
 
         # load jinja2 template
-        env = j2.Environment(loader=j2.PackageLoader('pylion', 'templates'),
+        env = j2.Environment(loader=j2.PackageLoader('sion.pylion', 'templates'),
                              trim_blocks=True)
         template = env.get_template(self.attrs['template'])
         rendered = template.render({**self.attrs, **odict})

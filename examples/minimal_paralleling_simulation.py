@@ -7,7 +7,7 @@ import os
 import numpy as np
 import scipy.constants as ct
 from pathlib import Path
-from electrode import System, PolygonPixelElectrode
+from sion.electrode import System, PolygonPixelElectrode
 import sion as sn
 import sion.pylion as pl  # requires SION installed: pip install -e . from repo
 
