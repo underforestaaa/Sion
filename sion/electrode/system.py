@@ -17,15 +17,56 @@
 #   You should have received a copy of the GNU General Public License
 #   along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
+# Modified for SION.
+
 from __future__ import (absolute_import, print_function,
         unicode_literals, division)
 
-import warnings, itertools
+from warnings import warn
+from itertools import cycle
 from contextlib import contextmanager
-import logging
-
-import numpy as np
-from scipy import optimize, constants as ct
+from logging import getLogger
+from numpy import (array, asanyarray, double, zeros, cos, einsum, fabs,
+    identity, dot, empty, inf, argwhere, unique, sqrt, pi, allclose, eye,
+    rad2deg, errstate, argsort, inner, outer, ones)
+from numpy import linalg
+from numpy import ma
+from numpy.random import randn as random_randn
+from scipy.constants import atomic_mass, elementary_charge, epsilon_0, h
+# namespace so code can keep using np.xxx, warnings.xxx, itertools.xxx, etc.
+class _Warnings:
+    pass
+warnings = _Warnings()
+warnings.warn = warn
+class _Itertools:
+    pass
+itertools = _Itertools()
+itertools.cycle = cycle
+class _Logging:
+    pass
+logging = _Logging()
+logging.getLogger = getLogger
+class _NP:
+    pass
+np = _NP()
+np.array, np.asanyarray, np.double, np.zeros = array, asanyarray, double, zeros
+np.cos, np.einsum, np.fabs, np.identity, np.dot = cos, einsum, fabs, identity, dot
+np.empty, np.inf, np.argwhere, np.unique = empty, inf, argwhere, unique
+np.sqrt, np.pi, np.allclose, np.eye, np.rad2deg = sqrt, pi, allclose, eye, rad2deg
+np.errstate, np.argsort, np.inner, np.outer, np.ones = errstate, argsort, inner, outer, ones
+np.linalg = linalg
+np.ma = ma
+class _NP_random:
+    pass
+np_random = _NP_random()
+np_random.randn = random_randn
+np.random = np_random
+class _CT:
+    pass
+ct = _CT()
+ct.atomic_mass, ct.elementary_charge, ct.epsilon_0, ct.h = (
+    atomic_mass, elementary_charge, epsilon_0, h)
+from scipy import optimize
 
 if not hasattr(optimize, "minimize"):
     # quick work around for scipy<0.11

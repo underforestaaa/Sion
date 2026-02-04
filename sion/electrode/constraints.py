@@ -1,4 +1,5 @@
 # -*- coding: utf8 -*-
+# Modified for SION.
 #
 #   electrode: numeric tools for Paul traps
 #
@@ -20,8 +21,17 @@
 from __future__ import (absolute_import, print_function,
         unicode_literals, division)
 
-import numpy as np
-import warnings
+from numpy import int_, float64, triu_indices, array
+from warnings import warn
+# namespace so code can keep using np.xxx and warnings.xxx
+class _NP:
+    pass
+np = _NP()
+np.int, np.float64, np.triu_indices, np.array = int_, float64, triu_indices, array
+class _Warnings:
+    pass
+warnings = _Warnings()
+warnings.warn = warn
 
 from traits.api import HasTraits, Array, Float, Int, List, Bool, Trait, Enum
 

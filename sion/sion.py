@@ -4,19 +4,33 @@ from numpy import (ones, array, max, concatenate, pi, tanh, exp, arange, mean, m
                    arccos, isnan, any, sign, linspace, block, array_split)
 from numpy.linalg import (norm, eig, eigh, inv)
 from numpy.random import (choice, random)
-from matplotlib.pyplot import (subplots, tight_layout, savefig, show, plot, figure, ylim, xlim, 
-locator_params, tick_params, fill_between, ylabel, xlabel, legend, scatter)
-from matplotlib.pyplot import cm
-from matplotlib import colors
 from .electrode import (System, PolygonPixelElectrode, PointPixelElectrode)
 from scipy.optimize import (minimize, curve_fit)
-import scipy.constants as ct
-from gdspy import Polygon, GdsLibrary
-from shapely.geometry import Point
-from shapely.geometry.polygon import Polygon as plgn
+from scipy.constants import e, epsilon_0, atomic_mass
+# namespace so code can keep using ct.e, ct.epsilon_0, ct.atomic_mass
+class _CT:
+    pass
+ct = _CT()
+ct.e, ct.epsilon_0, ct.atomic_mass = e, epsilon_0, atomic_mass
 from tqdm import tqdm
 from warnings import simplefilter, catch_warnings, warn
-from skopt import dummy_minimize
+
+
+def lazy_matplotlib():
+    """Import matplotlib.pyplot and matplotlib.colors only when needed. Returns a namespace with subplots, savefig, etc."""
+    from matplotlib.pyplot import (subplots, tight_layout, savefig, show, plot, figure, ylim, xlim,
+        locator_params, tick_params, fill_between, ylabel, xlabel, legend, scatter)
+    from matplotlib.pyplot import cm
+    from matplotlib import colors
+    class _Mpl:
+        pass
+    m = _Mpl()
+    m.subplots, m.tight_layout, m.savefig, m.show = subplots, tight_layout, savefig, show
+    m.plot, m.figure, m.ylim, m.xlim = plot, figure, ylim, xlim
+    m.locator_params, m.tick_params, m.fill_between = locator_params, tick_params, fill_between
+    m.ylabel, m.xlabel, m.legend, m.scatter, m.cm, m.colors = ylabel, xlabel, legend, scatter, cm, colors
+    return m
+
 
 """
 Functions, simulating the ion dynamics above planar traps
@@ -1222,7 +1236,8 @@ def n_wire_trap_design(top_dc, bottom_dc, central_wires, rf_indxs, Urf=0, gap=0,
 
     # creates a plot of electrode
     if need_plot:
-        fig, ax = subplots(1, 2, figsize=figsize)
+        mpl = lazy_matplotlib()
+        fig, ax = mpl.subplots(1, 2, figsize=figsize)
         s.plot(ax[0])
         s.plot_voltages(ax[1], u=s.rfs)
         # u = s.rfs sets the voltage-type for the voltage plot to RF-voltages (DC are not shown)
@@ -1236,8 +1251,8 @@ def n_wire_trap_design(top_dc, bottom_dc, central_wires, rf_indxs, Urf=0, gap=0,
             axi.set_xlim(-xmax, xmax)
             axi.set_ylim(-ymaxn, ymaxp)
         if save_plot:
-            tight_layout()
-            savefig(save_plot)
+            mpl.tight_layout()
+            mpl.savefig(save_plot)
             
     if need_coordinates:
         return s, RF, DC
@@ -1477,8 +1492,9 @@ def point_trap_design(frequencies, rf_voltages, dc_voltages, boundaries, scale, 
     trap = [trap_rf, trap_dc]
     
     if need_plot:
+        mpl = lazy_matplotlib()
         if len(dc_voltages)>0:
-            fig, ax = subplots(1,2,figsize=figsize)
+            fig, ax = mpl.subplots(1,2,figsize=figsize)
             s.plot_voltages(ax[0], u=s.rfs)
             ax[0].set_xlim((-scale, scale))
             ax[0].set_ylim((-scale, scale))
@@ -1490,20 +1506,20 @@ def point_trap_design(frequencies, rf_voltages, dc_voltages, boundaries, scale, 
             ax[0].set_aspect('equal', adjustable='box')
             ax[1].set_aspect('equal', adjustable='box')
             try:
-                cmap = cm.RdBu_r
-                norm_color = colors.Normalize(vmin=min(dc_voltages), vmax=max(dc_voltages))
+                cmap = mpl.cm.RdBu_r
+                norm_color = mpl.colors.Normalize(vmin=min(dc_voltages), vmax=max(dc_voltages))
     
-                cb = fig.colorbar(cm.ScalarMappable(norm=norm_color, cmap=cmap),ax=ax, shrink=1, aspect=25)
+                cb = fig.colorbar(mpl.cm.ScalarMappable(norm=norm_color, cmap=cmap),ax=ax, shrink=1, aspect=25)
     
                 cb.ax.tick_params(labelsize=8)
                 cb.set_label('Voltage, V', fontsize = 8)
             except:
                 pass
             if save_plot:
-                savefig(save_plot, bbox_inches='tight')
+                mpl.savefig(save_plot, bbox_inches='tight')
             
         else:
-            fig, ax = subplots(1,2,figsize=figsize)
+            fig, ax = mpl.subplots(1,2,figsize=figsize)
             s.plot_voltages(ax[0], u=s.rfs)
             ax[0].set_xlim((-scale, scale))
             ax[0].set_ylim((-scale, scale))
@@ -1515,8 +1531,8 @@ def point_trap_design(frequencies, rf_voltages, dc_voltages, boundaries, scale, 
             ax[0].set_aspect('equal', adjustable='box')
             ax[1].set_aspect('equal', adjustable='box')
             if save_plot:
-                savefig(save_plot)
-        show()
+                mpl.savefig(save_plot)
+        mpl.show()
 
     if need_coordinates:
         return s, trap
@@ -1554,6 +1570,7 @@ def polygons_from_gds(gds_lib, L=1e-6, cheight=0, cmax=0, need_coordinates=True,
 
 
     '''
+    from gdspy import GdsLibrary
     lib = GdsLibrary(infile=gds_lib)
     count = 0
     full_elec = []
@@ -1569,7 +1586,8 @@ def polygons_from_gds(gds_lib, L=1e-6, cheight=0, cmax=0, need_coordinates=True,
     
     # creates a plot of electrode
     if need_plot:
-        fig, ax = subplots(1, 1, figsize = [30, 30])
+        mpl = lazy_matplotlib()
+        fig, ax = mpl.subplots(1, 1, figsize = [30, 30])
         s.plot(ax)
         ax.set_title("electrode layout")
         ymaxes = []
@@ -1584,8 +1602,8 @@ def polygons_from_gds(gds_lib, L=1e-6, cheight=0, cmax=0, need_coordinates=True,
         ax.set_xlim(min([1.2*min(xmines), 0.8*min(xmines)]), max([1.2*max(xmaxes), 0.8*max(xmaxes)]))
         ax.set_ylim(min([1.2*min(ymines), 0.8*min(ymines)]), max([1.2*max(ymaxes), 0.8*max(ymaxes)]))
         if save_plot:
-            tight_layout()
-            savefig(save_plot)
+            mpl.tight_layout()
+            mpl.savefig(save_plot)
             
     if need_coordinates:
         return s, full_elec
@@ -1638,7 +1656,8 @@ def polygons_reshape(full_electrode_list, order, L=1e-6, need_plot=True, need_co
     
     # creates a plot of electrode
     if need_plot:
-        fig, ax = subplots(1, 1, figsize = [30, 30])
+        mpl = lazy_matplotlib()
+        fig, ax = mpl.subplots(1, 1, figsize = [30, 30])
         s.plot(ax)
         ax.set_title("electrode layout")
         ymaxes = []
@@ -1653,8 +1672,8 @@ def polygons_reshape(full_electrode_list, order, L=1e-6, need_plot=True, need_co
         ax.set_xlim(min([1.2*min(xmines), 0.8*min(xmines)]), max([1.2*max(xmaxes), 0.8*max(xmaxes)]))
         ax.set_ylim(min([1.2*min(ymines), 0.8*min(ymines)]), max([1.2*max(ymaxes), 0.8*max(ymaxes)]))
         if save_plot:
-            tight_layout()
-            savefig(save_plot)
+            mpl.tight_layout()
+            mpl.savefig(save_plot)
             
     if need_coordinates:
         return s, full_elec
@@ -1678,6 +1697,8 @@ def gapping(elec, gap):
         Shrinked electrode.
 
     '''
+    from shapely.geometry import Point
+    from shapely.geometry.polygon import Polygon as plgn
     poly = plgn(elec)
     gapped = []
     newel = concatenate([[elec[-1]], elec, [elec[0]]])
@@ -1773,6 +1794,7 @@ def polygon_to_gds(trap, name, gap=0):
     None.
 
     '''
+    from gdspy import Polygon, GdsLibrary
     lib = GdsLibrary()
     try:
         r = choice(1000, 1)
@@ -2777,41 +2799,42 @@ def stability(s, ion_masses, Omega, minimum, charges=1, L=1e-6, need_plot=True, 
 
     
     if need_plot:
-        fig = figure()
+        mpl = lazy_matplotlib()
+        fig = mpl.figure()
         fig.set_size_inches(7,5)
-        plot(q,ax, 'g')
-        plot(q,ab, 'g')
-        plot(q,ac, 'g')
-        plot(q,ad, 'g')
+        mpl.plot(q,ax, 'g')
+        mpl.plot(q,ab, 'g')
+        mpl.plot(q,ac, 'g')
+        mpl.plot(q,ad, 'g')
         
         y1 = array(list(map(max, zip(ax, ad))))
         y2 = array(list(map(min, zip(ab, ac))))
         
         y_lim = max(array([a_crit_upper, -a_crit_lower]))
         
-        ylim(-y_lim*1.25, y_lim*1.25)
-        xlim(0, q_crit*1.25)
-        plot(q,y1, 'g')
-        plot(q,y2, 'g')
-        xlabel('q', fontsize = '30')
-        ylabel('a', fontsize = '30')
-        fill_between(q, y1, y2,where=y2>=y1, interpolate = True, color = 'skyblue')
-        tick_params(axis='both', which='major', labelsize=14)
+        mpl.ylim(-y_lim*1.25, y_lim*1.25)
+        mpl.xlim(0, q_crit*1.25)
+        mpl.plot(q,y1, 'g')
+        mpl.plot(q,y2, 'g')
+        mpl.xlabel('q', fontsize = '30')
+        mpl.ylabel('a', fontsize = '30')
+        mpl.fill_between(q, y1, y2,where=y2>=y1, interpolate = True, color = 'skyblue')
+        mpl.tick_params(axis='both', which='major', labelsize=14)
         
-        locator_params(axis='x', nbins=6)
-        locator_params(axis='y', nbins=6)
+        mpl.locator_params(axis='x', nbins=6)
+        mpl.locator_params(axis='y', nbins=6)
        
         colors=["maroon", 'peru',"darkgoldenrod",'magenta', "orangered", 'darkorange', 'crimson', 'brown']
         k = 0
         for M, Z in zip(ion_masses, charges):
-            scatter(params[f'Ion (M = {round(M/ct.atomic_mass):d}, Z = {round(Z/ct.e):d})']['q'], params[f'Ion (M = {round(M/ct.atomic_mass):d}, Z = {round(Z/ct.e):d})']['a'], s = 40, edgecolor='black', color = colors[k], label = f'Ion (M = {round(M/ct.atomic_mass):d}, Z = {round(Z/ct.e):d})' )
+            mpl.scatter(params[f'Ion (M = {round(M/ct.atomic_mass):d}, Z = {round(Z/ct.e):d})']['q'], params[f'Ion (M = {round(M/ct.atomic_mass):d}, Z = {round(Z/ct.e):d})']['a'], s = 40, edgecolor='black', color = colors[k], label = f'Ion (M = {round(M/ct.atomic_mass):d}, Z = {round(Z/ct.e):d})' )
             k = (k+1)%8
-        legend()
-        tight_layout()
+        mpl.legend()
+        mpl.tight_layout()
         if save_plot:
-            savefig(save_plot)
+            mpl.savefig(save_plot)
     
-        show()
+        mpl.show()
         
     return params
 
@@ -2950,6 +2973,7 @@ def frequency_optimization(s, ion_masses, positions, axis, omegas, start_dcset, 
         voltage_bounds = [(voltage_bounds[0],voltage_bounds[1]) for n in range(len(numbers))]
 
     if find_initial_guess:
+        from skopt import dummy_minimize
         with tqdm(total=call_num, desc='Finding initial guess') as pbarn:
             with catch_warnings():
                 simplefilter("ignore")

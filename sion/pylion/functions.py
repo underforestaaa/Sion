@@ -1,5 +1,18 @@
+# Modified for SION.
+
 from .lammps import lammps
-import numpy as np
+from numpy import pi, sin, cos, sqrt, array, max as np_max
+from numpy.random import random, randint
+# namespace so code can keep using np.xxx and np.random.xxx
+class _NP:
+    pass
+np = _NP()
+np.pi, np.sin, np.cos, np.sqrt, np.array, np.max = pi, sin, cos, sqrt, array, np_max
+class _NP_random:
+    pass
+np_random = _NP_random()
+np_random.random, np_random.randint = random, randint
+np.random = np_random
 
 
 @lammps.fix

@@ -1,5 +1,6 @@
 # -*- coding: utf-8 -*-
 # transformations.py
+# Modified for SION.
 
 # Copyright (c) 2006-2017, Christoph Gohlke
 # Copyright (c) 2006-2017, The Regents of the University of California
@@ -197,7 +198,30 @@ from __future__ import division, print_function
 
 import math
 
-import numpy
+from numpy import (identity, array, dot, outer, trace, float64, where, real,
+    diag, allclose, sum as np_sum, cos, sin, roll, cross, finfo)
+from numpy.linalg import eig, det, inv, svd, pinv, eigh
+from numpy.random import random as random_random, rand as random_rand, normal as random_normal
+# namespace so code can keep using numpy.xxx, numpy.linalg.xxx, numpy.random.xxx
+class _Numpy:
+    pass
+numpy = _Numpy()
+numpy.identity, numpy.array, numpy.dot, numpy.outer = identity, array, dot, outer
+numpy.trace, numpy.float64, numpy.where, numpy.real = trace, float64, where, real
+numpy.diag, numpy.allclose, numpy.sum, numpy.cos = diag, allclose, np_sum, cos
+numpy.sin, numpy.roll, numpy.cross, numpy.finfo = sin, roll, cross, finfo
+class _Numpy_linalg:
+    pass
+numpy_linalg = _Numpy_linalg()
+numpy_linalg.eig, numpy_linalg.det, numpy_linalg.inv = eig, det, inv
+numpy_linalg.svd, numpy_linalg.pinv, numpy_linalg.eigh = svd, pinv, eigh
+numpy.linalg = numpy_linalg
+class _Numpy_random:
+    pass
+numpy_random = _Numpy_random()
+numpy_random.random, numpy_random.rand, numpy_random.normal = (
+    random_random, random_rand, random_normal)
+numpy.random = numpy_random
 
 __version__ = '2017.02.17'
 __docformat__ = 'restructuredtext en'

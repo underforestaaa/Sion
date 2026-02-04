@@ -1,4 +1,5 @@
 # -*- coding: utf8 -*-
+# Modified for SION.
 #
 #   electrode: numeric tools for Paul traps
 #
@@ -23,7 +24,21 @@ from __future__ import (absolute_import, print_function,
 from math import factorial
 from itertools import product
 
-import numpy as np
+from numpy import (atleast_2d, sqrt, einsum, dot, empty, array, roll,
+    zeros, identity, pi)
+from numpy.linalg import eig as linalg_eig
+# namespace so code can keep using np.xxx and np.linalg.xxx
+class _NP:
+    pass
+np = _NP()
+np.atleast_2d, np.sqrt, np.einsum, np.dot, np.empty, np.array = (
+    atleast_2d, sqrt, einsum, dot, empty, array)
+np.roll, np.zeros, np.identity, np.pi = roll, zeros, identity, pi
+class _NP_linalg:
+    pass
+np_linalg = _NP_linalg()
+np_linalg.eig = linalg_eig
+np.linalg = np_linalg
 
 
 def shaped(func):

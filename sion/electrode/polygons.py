@@ -17,16 +17,35 @@
 #   You should have received a copy of the GNU General Public License
 #   along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
+# Modified for SION.
+
 from __future__ import (absolute_import, print_function,
                         unicode_literals, division)
 
-import logging
-import operator
-
-import numpy as np
+from logging import getLogger
+from operator import itemgetter
+from numpy import (roll, hypot, cumsum, arctan2, fabs, where, linspace,
+    ones_like, pi, around, log10, array, finfo, float32, c_, concatenate,
+    arange)
+# namespace so code can keep using np.xxx, logging.xxx, operator.xxx
+class _NP:
+    pass
+np = _NP()
+np.roll, np.hypot, np.cumsum, np.arctan2, np.fabs = roll, hypot, cumsum, arctan2, fabs
+np.where, np.linspace, np.ones_like, np.pi = where, linspace, ones_like, pi
+np.around, np.log10, np.array, np.finfo, np.float32 = around, log10, array, finfo, float32
+np.c_, np.concatenate, np.arange = c_, concatenate, arange
+class _Logging:
+    pass
+logging = _Logging()
+logging.getLogger = getLogger
+class _Operator:
+    pass
+operator = _Operator()
+operator.itemgetter = itemgetter
 from scipy.interpolate import splprep, splev
 from shapely import geometry, ops
-from gdsii import library, structure, elements
+# from gdsii import library, structure, elements
 
 from .system import System
 from .electrode import PolygonPixelElectrode

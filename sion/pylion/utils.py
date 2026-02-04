@@ -1,9 +1,46 @@
-import inspect
-import os
-import sys
-import warnings
-import functools
-import h5py
+# Modified for SION.
+
+from inspect import signature, getdoc, stack
+# namespace so code can keep using inspect.xxx
+class _Inspect:
+    pass
+inspect = _Inspect()
+inspect.signature, inspect.getdoc, inspect.stack = signature, getdoc, stack
+
+from os.path import abspath
+class _Path:
+    pass
+os_path = _Path()
+os_path.abspath = abspath
+class _Os:
+    pass
+os = _Os()
+os.path = os_path
+
+from sys import argv
+class _Sys:
+    pass
+sys = _Sys()
+sys.argv = argv
+
+from warnings import warn
+class _Warnings:
+    pass
+warnings = _Warnings()
+warnings.warn = warn
+
+from functools import wraps
+class _Functools:
+    pass
+functools = _Functools()
+functools.wraps = wraps
+
+from h5py import File
+class _H5:
+    pass
+h5py = _H5()
+h5py.File = File
+
 from termcolor import colored
 
 
