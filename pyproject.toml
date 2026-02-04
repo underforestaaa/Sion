@@ -50,10 +50,10 @@ repository = "https://github.com/underforestaaa/Sion"
 [tool.setuptools]
 packages = ["sion", "sion.electrode", "sion.pylion"]
 include-package-data = true
+py-modules = []
 
 [tool.setuptools.package-data]
 "sion.pylion" = ["templates/*.j2"]
-py-modules = []
 #ext-modules = [
 #  {name = "electrode._transformations", sources = ["sion/electrode/transformations.c"]}, 
 #  {name = "electrode.cexpressions", sources = ["sion/electrode/cexpressions.pyx"]}
