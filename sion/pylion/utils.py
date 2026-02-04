@@ -105,7 +105,7 @@ def save_atttributes_and_files(func):
         _savecallersource(attrs['name'] + '.h5')
 
         for filename in (attrs['output_files']
-                         + ['log.lammps', attrs['name'] + '.lammps']):
+                         + [attrs['name'] + '.lmp.log', attrs['name'] + '.lammps']):
             _savescriptsource(attrs['name'] + '.h5', filename)
 
     return wrapper
