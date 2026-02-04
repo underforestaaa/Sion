@@ -517,10 +517,10 @@ def approx_linear_shuttling(voltage_seq, T, res):
                 with catch_warnings():
                     simplefilter("ignore")
                     popt_tan, _ = curve_fit(fitter_tan, x_data, seq, [abs(dif/2), dif/T, -T/2, mean_seq])
-                    tan = norm(seq - fitter_tan(x_data, *popt_tan))
+                    tan_residual = norm(seq - fitter_tan(x_data, *popt_tan))
             except:
                 att += 1
-                tan = 1e6
+                tan_residual = 1e6
             try:
                 with catch_warnings():
                     simplefilter("ignore")
@@ -532,7 +532,7 @@ def approx_linear_shuttling(voltage_seq, T, res):
             if att == 2:
                 warn(f"Failed to fit {i}th electrode. Needs custom curve fitting")
             
-            if tan > norm_seq:
+            if tan_residual > norm_seq:
                 funcs.append('((%5.6f) * exp((%5.6f) * (step*dt - (%5.6f))^2) + (%5.6f))' % tuple(popt_norm))
             else:
                 funcs.append('((%5.6f) * (1 - 2/(exp(2*((%5.6f) * (step*dt + (%5.6f)))) + 1)) + (%5.6f))' % tuple(popt_tan))
@@ -2758,23 +2758,23 @@ def stability(s, ion_masses, Omega, minimum, charges=1, L=1e-6, need_plot=True, 
     rot = dot(inv(BasQ),BasA)
     thetha = arccos(rot[0,0])
     c = cos(2*thetha)
-    sin = sin(2*thetha)
+    sin_2theta = sin(2*thetha)
     params['\u03B1'] = alpha
     params['\u03B8'] = thetha
 
     q = linspace(0,1.5, 1000)
     ax = -q**2/2
     ab = q**2/(2*alpha)
-    ac = 1 - c*q - (c**2/8 + (2*sin**2*(5+alpha))/((1+alpha)*(9+alpha)))*q**2
-    ad = -(1 - c*q - (c**2/8 + (2*sin**2*(5+1/alpha))/((1+1/alpha)*(9+1/alpha)))*q**2)/alpha
+    ac = 1 - c*q - (c**2/8 + (2*sin_2theta**2*(5+alpha))/((1+alpha)*(9+alpha)))*q**2
+    ad = -(1 - c*q - (c**2/8 + (2*sin_2theta**2*(5+1/alpha))/((1+1/alpha)*(9+1/alpha)))*q**2)/alpha
 
     aa = 1/(2*alpha)
     bb = 1
     cc = -c
-    dd = -(c**2/8 + (2*sin**2*(5+alpha))/((1+alpha)*(9+alpha)))
+    dd = -(c**2/8 + (2*sin_2theta**2*(5+alpha))/((1+alpha)*(9+alpha)))
     ee = -1/alpha
     ff = c/alpha
-    gg = (c**2/8 + (2*sin**2*(5+1/alpha))/((1+1/alpha)*(9+1/alpha)))/alpha
+    gg = (c**2/8 + (2*sin_2theta**2*(5+1/alpha))/((1+1/alpha)*(9+1/alpha)))/alpha
     hh = -1/2
 
     q_crit = max([(-(cc-ff) - sqrt((cc-ff)**2 - 4*(dd-gg)*(bb-ee)))/(2*(dd-gg)), (-(cc-ff) + sqrt((cc-ff)**2 - 4*(dd-gg)*(bb-ee)))/(2*(dd-gg))])
