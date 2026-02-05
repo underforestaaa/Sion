@@ -89,3 +89,5 @@ Free software: MIT license
 
 <code>SimulationError: There are identical 'uids'. Although this is allowed in some  cases, 'lammps' is probably not going to like it.</code>
 
+
+
