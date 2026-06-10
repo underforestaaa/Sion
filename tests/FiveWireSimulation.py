@@ -18,7 +18,7 @@ from sion.electrode import (System, PolygonPixelElectrode, euler_matrix,
 
 
 if __name__ == "__main__":
-    output_dir = Path("supplementary")
+    output_dir = Path(__file__).resolve().parent / "supplementary"
     output_dir.mkdir(parents=True, exist_ok=True)
     positions_dump_path = output_dir / "positions.txt"
 

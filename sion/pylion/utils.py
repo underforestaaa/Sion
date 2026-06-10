@@ -7,6 +7,13 @@ class _Inspect:
 inspect = _Inspect()
 inspect.signature, inspect.getdoc, inspect.stack = signature, getdoc, stack
 
+from linecache import getline, getlines
+class _Linecache:
+    pass
+linecache = _Linecache()
+linecache.getline = getline
+linecache.getlines = getlines
+
 from os.path import abspath
 class _Path:
     pass
@@ -114,8 +121,18 @@ def save_atttributes_and_files(func):
 def _savescriptsource(h5file, script):
     with h5py.File(h5file, 'a') as f:
         with open(script, 'rb') as pf:
-            lines = pf.readlines()
-            f.create_dataset(script, data=lines)
+            # Store raw bytes as uint8 to avoid HDF5 variable-length string
+            # conversion errors when files contain embedded NULL bytes.
+            payload = pf.read()
+            if script in f:
+                del f[script]
+            f.create_dataset(script, data=bytearray(payload), dtype='u1')
+
+
+def _savevirtualsource(h5file, source_name, lines):
+    encoded_lines = [line.encode('utf-8') for line in lines]
+    with h5py.File(h5file, 'a') as f:
+        f.create_dataset(source_name, data=encoded_lines)
 
 
 def _savecallersource(h5file):
@@ -127,6 +144,17 @@ def _savecallersource(h5file):
         if sys.argv[0] == frame.filename:
             _savescriptsource(h5file, frame.filename)
             return
+
+    # In Jupyter/IPython, the "file" is usually a virtual cell like
+    # "<ipython-input-12-...>", so save that source from linecache.
+    for frame in stack:
+        if frame.filename.startswith('<ipython-input-'):
+            lines = linecache.getlines(frame.filename, frame.frame.f_globals)
+            if lines:
+                source_name = frame.filename.strip('<>').replace('/', '_')
+                source_name = f'jupyter_{source_name}.py'
+                _savevirtualsource(h5file, source_name, lines)
+                return
 
     # cannot save on the h5 file if using the repl
     warnings.warn(

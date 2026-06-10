@@ -1,5 +1,5 @@
 [build-system]
-requires = ["setuptools>=75.8.1,<82", "Cython", "numpy"]
+requires = ["setuptools>=75.8.1", "Cython", "numpy"]
 build-backend = "setuptools.build_meta"
 
 [project]
@@ -26,8 +26,7 @@ dependencies = [
     "sphinx>=7.4,<8; python_version < '3.10'",
     "numpydoc>=1.0",
     "cvxopt>=1",
-    "setuptools>=65,<82",  # Upper bound required due to wexpect compatibility
-    "wexpect",
+    "setuptools>=65",
 ]
 classifiers = [
     "Development Status :: 3 - Alpha",

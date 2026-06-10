@@ -45,19 +45,6 @@ Free software: GNU GENERAL PUBLIC LICENSE
 *   Optimization of DC voltage set of a planar trap to match the desired secular frequency and radial mode rotation angle in given positions.
 *   Convenient trap design. Layout may be imported from GDS file or created by defining the arbitrary electrode shape boundary. 
 
-## File structure
-
-*  'sion\sion.py': contains all the main functions.
-
-*  'sion\pylion\': the *pyLion* package adapted for *SION*.
-
-*  'sion\electrode\': the *electrode* package adapted for *SION*.
-
-*  'examples\': examples showing different features of *SION*.
-
-*  'tests\': verifications and tests of *SION* work.
-
-
 ## Possible issues
 
 *  The following error may occur from trying to execute simulation two times without restarting the kernel. It is specific to IPython IDEs (Jupyter, spyder). The error will be resolved by restarting the kernel.

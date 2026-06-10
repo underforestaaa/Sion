@@ -10,18 +10,6 @@ sys.platform = platform
 from .utils import save_atttributes_and_files
 
 
-def _import_pexpect():
-    # Lazy import: wexpect runs code on import (e.g. pkg_resources); only needed in execute().
-    if 'win32' in sys.platform:
-        import wexpect as pexpect  # type: ignore[import-untyped]
-    else:
-        raise OSError(
-            "SION currently supports Windows only. "
-            "This module requires wexpect on win32."
-        )
-    return pexpect
-
-
 from h5py import File
 class _H5:
     pass
@@ -50,7 +38,7 @@ from datetime import datetime
 from collections import defaultdict
 import os
 import shutil
-# SION mod: subprocess replaces wexpect/pexpect for launching LAMMPS (see execute()).
+# SION mod: subprocess handles launching LAMMPS (see execute()).
 import subprocess
 
 # SION mod: MPI support for LAMMPS (e.g. MS-MPI on Windows)
@@ -328,8 +316,8 @@ class Simulation(list):
         signal.signal(signal.SIGINT, signal_handler)
 
         cmd = self._build_command()
-        # SION mod: was pexpect.spawn(cmd) via wexpect on win32; switched to subprocess because
-        # wexpect could hang with no stdout when running lmp.exe / mpiexec on some Windows setups.
+        # SION mod: subprocess gives reliable line-by-line streaming for lmp.exe
+        # and mpiexec on Windows.
         # Popen + PIPE gives reliable line-by-line streaming; shell=True keeps mpiexec command strings.
         child = subprocess.Popen(
             cmd,

@@ -19,7 +19,7 @@ import sion as sn
 
 
 if __name__ == "__main__":
-    output_dir = Path("supplementary")
+    output_dir = Path(__file__).resolve().parent / "supplementary"
     output_dir.mkdir(parents=True, exist_ok=True)
     ring_dump_path = output_dir / "posring.txt"
 

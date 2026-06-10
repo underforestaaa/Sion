@@ -2831,7 +2831,7 @@ def stability(s, ion_masses, Omega, minimum, charges=1, L=1e-6, need_plot=True, 
         for M, Z in zip(ion_masses, charges):
             mpl.scatter(params[f'Ion (M = {round(M/ct.atomic_mass):d}, Z = {round(Z/ct.e):d})']['q'], params[f'Ion (M = {round(M/ct.atomic_mass):d}, Z = {round(Z/ct.e):d})']['a'], s = 40, edgecolor='black', color = colors[k], label = f'Ion (M = {round(M/ct.atomic_mass):d}, Z = {round(Z/ct.e):d})' )
             k = (k+1)%8
-        mpl.legend()
+        mpl.legend(framealpha=1.0, facecolor='white')
         mpl.tight_layout()
         if save_plot:
             mpl.savefig(save_plot)

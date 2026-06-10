@@ -6,8 +6,7 @@ import numpy
 
 # SION is currently supported on Windows only.
 if 'win32' not in sys.platform:
-    raise RuntimeError("surface-ion currently supports Windows only.")
-expect = ['wexpect']
+    raise RuntimeError("surface-ion currently was tested on Windows only.")
 
 
 with open('readme.md') as readme_file:
@@ -31,8 +30,8 @@ requirements = [
     "sphinx>=7.4,<8; python_version < '3.10'",
     'numpydoc>=1.0',
     'cvxopt>=1',
-    'setuptools>=65,<82',  # Upper bound required due to wexpect compatibility
-] + expect
+    'setuptools>=65',
+]
 
 
 short_description = (
