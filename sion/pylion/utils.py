@@ -14,11 +14,12 @@ linecache = _Linecache()
 linecache.getline = getline
 linecache.getlines = getlines
 
-from os.path import abspath
+from os.path import abspath, dirname
 class _Path:
     pass
 os_path = _Path()
 os_path.abspath = abspath
+os_path.dirname = dirname
 class _Os:
     pass
 os = _Os()
@@ -35,6 +36,8 @@ class _Warnings:
     pass
 warnings = _Warnings()
 warnings.warn = warn
+
+import re
 
 from functools import wraps
 class _Functools:
@@ -135,26 +138,44 @@ def _savevirtualsource(h5file, source_name, lines):
         f.create_dataset(source_name, data=encoded_lines)
 
 
+def _sanitize_source_name(source_name):
+    cleaned = source_name.strip('<>')
+    cleaned = re.sub(r'[^A-Za-z0-9._-]+', '_', cleaned)
+    return f'jupyter_{cleaned}.py'
+
+
+def _is_internal_frame(filename):
+    normalized = filename.replace('/', '\\').lower()
+    return '\\pylion\\' in normalized
+
+
 def _savecallersource(h5file):
     # inspect the first four frames of the stack to find the correct
     # filename. This covers calling from execute() or _writeinputfile().
     # if the stack is indeed larger than this it's probably the REPL.
-    stack = inspect.stack()[:5]
+    stack = inspect.stack()[:8]
     for frame in stack:
-        if sys.argv[0] == frame.filename:
+        if sys.argv[0] == frame.filename and not _is_internal_frame(frame.filename):
             _savescriptsource(h5file, frame.filename)
             return
 
-    # In Jupyter/IPython, the "file" is usually a virtual cell like
-    # "<ipython-input-12-...>", so save that source from linecache.
+    # In notebooks or interactive kernels, stack frames can point to virtual
+    # sources. Try to save the first non-pylion frame we can recover.
     for frame in stack:
-        if frame.filename.startswith('<ipython-input-'):
-            lines = linecache.getlines(frame.filename, frame.frame.f_globals)
-            if lines:
-                source_name = frame.filename.strip('<>').replace('/', '_')
-                source_name = f'jupyter_{source_name}.py'
-                _savevirtualsource(h5file, source_name, lines)
-                return
+        filename = frame.filename
+        if not filename or _is_internal_frame(filename):
+            continue
+
+        try:
+            _savescriptsource(h5file, filename)
+            return
+        except OSError:
+            pass
+
+        lines = linecache.getlines(filename, frame.frame.f_globals)
+        if lines:
+            _savevirtualsource(h5file, _sanitize_source_name(filename), lines)
+            return
 
     # cannot save on the h5 file if using the repl
     warnings.warn(
