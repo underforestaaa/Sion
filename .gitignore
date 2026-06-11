@@ -3,6 +3,7 @@ __pycache__/
 *.py[cod]
 
 # Build/packaging outputs
+build/
 *.egg-info/
 .eggs/
 surface_ion.egg-info/
