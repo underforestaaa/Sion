@@ -13,7 +13,7 @@ LAMMPS-based molecular dynamics simulations provide a reliable baseline for mode
 
 
 
-This package is currently supported on **Windows only**. It was developed and tested on **Windows only**.
+This package was developed and tested on **Windows only**.
 
 The newest version may be installed via pip:  
 <code>pip install surface-ion</code>
