@@ -1,6 +1,6 @@
 """
 This is a wrapper around electrode package to ensure it's compatibility with 
-up-to-date versions of numpy and sion: http://github.com/nist-ionstorage/electrode
+up-to-date versions of numpy and SION: http://github.com/nist-ionstorage/electrode
 Pylion is used in accordance to GPLv3+ license.
 """
 

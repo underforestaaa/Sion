@@ -1,5 +1,12 @@
+# Modified for SION.
+
 from .utils import validate_id, _unique_id, pretty_repr
-import functools
+from functools import update_wrapper, partial
+# namespace so code can keep using functools.xxx
+class _Functools:
+    pass
+functools = _Functools()
+functools.update_wrapper, functools.partial = update_wrapper, partial
 
 
 @pretty_repr

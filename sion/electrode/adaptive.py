@@ -1,4 +1,5 @@
 # -*- coding: utf8 -*-
+# Modified for SION.
 #
 #   electrode: numeric tools for Paul traps
 #
@@ -21,13 +22,22 @@ from __future__ import print_function, division, absolute_import
 
 from functools import partial
 
-import numpy as np
+from numpy import (concatenate, arange, roll, ones_like, intc, double,
+    c_, zeros, ones, dot, empty, fabs, where)
+# namespace so code can keep using np.xxx
+class _NP:
+    pass
+np = _NP()
+np.concatenate, np.arange, np.roll, np.ones_like, np.intc, np.double = (
+    concatenate, arange, roll, ones_like, intc, double)
+np.c_, np.zeros, np.ones, np.dot, np.empty, np.fabs, np.where = (
+    c_, zeros, ones, dot, empty, fabs, where)
 
 from .system import System
 from .electrode import PolygonPixelElectrode
 from .utils import area_centroid
 
-from bem.pytriangle import triangulate
+# from bem.pytriangle import triangulate
 
 """Tools to perform adaptive mesh refinement based on System.optimize
 output.

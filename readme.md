@@ -1,27 +1,39 @@
-# *Sion* package
+# *SION* package
 
 Python package for simulation and analysis of ion crystals in surface electrode traps.
 
+
+***
+The package combines voltage optimization algorithms with ion-dynamics simulation in LAMMPS through the [electrode](https://github.com/nist-ionstorage/electrode) and [pyLIon](https://bitbucket.org/dtrypogeorgos/pylion/src/master/) packages.
+LAMMPS-based molecular dynamics simulations provide a reliable baseline for modeling ion-crystal behavior.
+***
+
+
 ## Installation
 
-To use *Sion*, the following packages are required to be installed from source and tested:
-- [pylion package](https://bitbucket.org/dtrypogeorgos/pylion/src/master/): LAMMPS wrapper for ion dynamics simulation. This package requires installation of LAMMPS software with the specific version. It will work well with the latest LAMMPS version, if in source file *pylion.py* at line 51 you change "lmp_serial" to "lmp".  
-- [electrode package](https://github.com/nist-ionstorage/electrode): Python package for convenient definition and analysis of surface electrode traps.  
-!Note: for correct execution of these packages, numpy<=1.21.0 is required. 
+
+
+This package is currently supported on **Windows only**. It was developed and tested on **Windows only**.
 
 The newest version may be installed via pip:  
 <code>pip install surface-ion</code>
 
 
+The following software must be installed to use *SION*:  
+*  Molecular Dynamics simulations use [LAMMPS](https://www.lammps.org/download.html).
+
+*  Parallel runs use [Microsoft MPI](https://learn.microsoft.com/en-us/message-passing-interface/microsoft-mpi) (MS-MPI). Install the M
+
+
 ## Getting started
 
-*Sion* works with surface traps, defined through the *electrode* package. The simulation of ion dynamics is carried through the *pylion* environment.
-All functions, presented in *Sion* are described in example notebooks. Main file *sion.py* contains docs for each function.
+*SION* works with surface traps, defined through the *electrode* package. The simulation of ion dynamics is carried through the *pylion* environment.
+All functions, presented in *SION* are described in example notebooks. Main file *sion.py* contains docs for each function.
 
-To publish the results, obtained with *Sion*, we kindly ask you to cite the following article:
+To publish the results, obtained with *SION*, we kindly ask you to cite the following article:
 1. [Surface trap with adjustable ion couplings for scalable and parallel gates](https://journals.aps.org/pra/abstract/10.1103/PhysRevA.109.022605)
 
-Free software: MIT license
+Free software: GNU GENERAL PUBLIC LICENSE
 
 ## Features
 
@@ -33,17 +45,9 @@ Free software: MIT license
 *   Optimization of DC voltage set of a planar trap to match the desired secular frequency and radial mode rotation angle in given positions.
 *   Convenient trap design. Layout may be imported from GDS file or created by defining the arbitrary electrode shape boundary. 
 
-## File structure
-
-*  'build/lib/sion.py': contains all the main functions.
-
-*  'examples': examples showing different features of *Sion*.
-
-*  'tests': verifications and tests of *Sion* work.
-
 ## Possible issues
 
-*  The following error may occur from trying to execute simulation two times without restarting the kernel. It is specific to IPython IDEs (Jupyter, spyder). The error source is in pylion package, and will be resolved by restarting the kernel.
+*  The following error may occur from trying to execute simulation two times without restarting the kernel. It is specific to IPython IDEs (Jupyter, spyder). The error will be resolved by restarting the kernel.
 
 <code>SimulationError: There are identical 'uids'. Although this is allowed in some  cases, 'lammps' is probably not going to like it.</code>
 

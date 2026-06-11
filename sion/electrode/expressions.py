@@ -1,4 +1,5 @@
 # -*- coding: utf8 -*-
+# Modified for SION.
 #
 #   electrode: numeric tools for Paul traps
 #
@@ -20,9 +21,13 @@
 from __future__ import print_function, division, absolute_import
 
 from math import pi, sqrt, atan, atan2, fabs
-import logging
 
-import numpy as np
+from numpy import zeros, float64
+# namespace so code can keep using np.xxx
+class _NP:
+    pass
+np = _NP()
+np.zeros, np.float64 = zeros, float64
 
 try:
     #raise ImportError

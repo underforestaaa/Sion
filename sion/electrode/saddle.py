@@ -1,4 +1,5 @@
 # -*- coding: utf8 -*-
+# Modified for SION.
 #
 #   saddle.py: Rational function optimization (RFO),
 #              a saddlepoint search method
@@ -21,7 +22,26 @@
 from __future__ import (absolute_import, print_function,
         unicode_literals, division)
 
-import numpy as np
+from numpy import (matrix, array, identity, ones, argsort, sqrt, abs as np_abs,
+    exp, mgrid)
+from numpy.linalg import eigh as linalg_eigh, norm as linalg_norm
+from numpy.random import rand as random_rand
+# namespace so code can keep using np.xxx, np.linalg.xxx, np.random.xxx
+class _NP:
+    pass
+np = _NP()
+np.matrix, np.array, np.identity, np.ones = matrix, array, identity, ones
+np.argsort, np.sqrt, np.abs, np.exp, np.mgrid = argsort, sqrt, np_abs, exp, mgrid
+class _NP_linalg:
+    pass
+np_linalg = _NP_linalg()
+np_linalg.eigh, np_linalg.norm = linalg_eigh, linalg_norm
+np.linalg = np_linalg
+class _NP_random:
+    pass
+np_random = _NP_random()
+np_random.rand = random_rand
+np.random = np_random
 
 
 def rfo(fun, grad, x0, args=(), 

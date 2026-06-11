@@ -1,4 +1,4 @@
 from .sion import *
-from sion import pylion
-from sion import electrode
+import sion.pylion as pylion
+import sion.electrode as electrode
 from ._version import __version__

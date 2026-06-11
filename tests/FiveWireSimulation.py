@@ -6,17 +6,22 @@ axial_ and radial_normal_modes(), and verified with theoretical analysis.
 """
 
 from __future__ import division
-import pylion as pl
+import sion as sn
+import sion.pylion as pl
 from pathlib import Path
 import matplotlib.pyplot as plt, numpy as np, scipy.constants as ct
-from electrode import (System, PolygonPixelElectrode, euler_matrix,
-                       PointPixelElectrode, PotentialObjective,
-                       PatternRangeConstraint, shaped)
-import sion as sn
+from sion.electrode import (System, PolygonPixelElectrode, euler_matrix,
+                            PointPixelElectrode, PotentialObjective,
+                            PatternRangeConstraint, shaped)
+
 
 
 
 if __name__ == "__main__":
+    output_dir = Path(__file__).resolve().parent / "supplementary"
+    output_dir.mkdir(parents=True, exist_ok=True)
+    positions_dump_path = output_dir / "positions.txt"
+
     # Global definition of trap parameters.
     L = 1e-6 # length scale
     Vrf = 200. # RF peak voltage in V
@@ -53,7 +58,7 @@ if __name__ == "__main__":
     """Simulation"""
 
     #insert your path to this file here
-    name = Path(__file__).stem
+    name = str(output_dir / Path(__file__).stem)
 
     s = pl.Simulation(name)
 
@@ -71,7 +76,7 @@ if __name__ == "__main__":
     s.append(pl.langevinbath(0, 1e-7))
 
     #files with simulation information
-    s.append(pl.dump('positions.txt', variables=['x', 'y', 'z'], steps=10))
+    s.append(pl.dump(str(positions_dump_path), variables=['x', 'y', 'z'], steps=10))
     s.append(pl.evolve(1e5))
     try:
         s.execute()
@@ -79,7 +84,7 @@ if __name__ == "__main__":
     except:
         pass
 
-    _, data = pl.readdump('positions.txt')
+    _, data = pl.readdump(str(positions_dump_path))
     data *= 1e6
 
     final_x = data[-1, :, 0]

@@ -4,11 +4,9 @@ from Cython.Distutils import build_ext
 import numpy
 
 
-# install wexpect if windows
-if 'win32' in sys.platform:
-    expect = ['wexpect']
-else:
-    expect = ['pexpect>=4.2.1']
+# SION is currently supported on Windows only.
+if 'win32' not in sys.platform:
+    raise RuntimeError("surface-ion currently was tested on Windows only.")
 
 
 with open('readme.md') as readme_file:
@@ -28,11 +26,12 @@ requirements = [
     'shapely>=2.0',
     'tqdm>=4.66',
     'nose>=1.0',
-    'sphinx>=8.0',
+    "sphinx>=8.0; python_version >= '3.10'",
+    "sphinx>=7.4,<8; python_version < '3.10'",
     'numpydoc>=1.0',
     'cvxopt>=1',
-    # 'mayavi>=4',
-] + expect
+    'setuptools>=65',
+]
 
 
 short_description = (
@@ -40,7 +39,7 @@ short_description = (
 
 setup(
     name='surface-ion',
-    version='1.1.0',
+    version='1.1.1',
     description=short_description,
     long_description=readme,
     long_description_content_type='text/markdown',
@@ -48,6 +47,7 @@ setup(
     author_email='a.podlesnyy@rqc.ru',
     url='https://github.com/underforestaaa/Sion',
     packages=find_packages(include=['sion', "sion.electrode", "sion.pylion"]),
+    package_data={'sion.pylion': ['templates/*.j2']},
     install_requires=requirements,
     license="GPLv3+",
     keywords=['surface trap', 'ion', 'quantum computing', 'ion simulation',
@@ -61,10 +61,10 @@ setup(
     ],
     test_suite='tests',
     ext_modules=[
-            Extension("electrode._transformations",
+            Extension("sion.electrode._transformations",
                 sources=["sion/electrode/transformations.c"],
                 include_dirs=[numpy.get_include()]),
-            Extension("electrode.cexpressions",
+            Extension("sion.electrode.cexpressions",
                 sources=["sion/electrode/cexpressions.pyx",
                         #"electrode/cexpressions.c",
                         ],

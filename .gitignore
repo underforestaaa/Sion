@@ -1,0 +1,21 @@
+# Python caches/artifacts
+__pycache__/
+*.py[cod]
+
+# Build/packaging outputs
+build/
+*.egg-info/
+.eggs/
+surface_ion.egg-info/
+examples/supplementary/
+tests/supplementary/
+sion/electrode/cexpressions.c
+sion/electrode/*.pyd
+ignore/
+
+# Notebook checkpoints
+.ipynb_checkpoints/
+
+# Editor/OS noise
+.idea/
+.vscode/

@@ -1,20 +1,53 @@
-import h5py
-import signal
-import jinja2 as j2
-import json
-from datetime import datetime
-from collections import defaultdict
-import sys
-import time
+# Modified for SION.
+
+from sys import platform
+# namespace so code can keep using sys.xxx
+class _Sys:
+    pass
+sys = _Sys()
+sys.platform = platform
 
 from .utils import save_atttributes_and_files
 
-if 'win32' in sys.platform:
-    import wexpect as pexpect
-else:
-    import pexpect
 
-__version__ = '0.5.0'
+from h5py import File
+class _H5:
+    pass
+h5py = _H5()
+h5py.File = File
+
+from signal import signal as set_signal, SIGINT
+class _Signal:
+    pass
+signal = _Signal()
+signal.signal, signal.SIGINT = set_signal, SIGINT
+
+from jinja2 import Environment, PackageLoader
+class _J2:
+    pass
+j2 = _J2()
+j2.Environment, j2.PackageLoader = Environment, PackageLoader
+
+from json import dumps, loads
+class _Json:
+    pass
+json = _Json()
+json.dumps, json.loads = dumps, loads
+
+from datetime import datetime
+from collections import defaultdict
+import os
+import shutil
+# SION mod: subprocess handles launching LAMMPS (see execute()).
+import subprocess
+
+# SION mod: MPI support for LAMMPS (e.g. MS-MPI on Windows)
+# - auto-detects lmp.exe and mpiexec paths
+# - sim.set_mpi(processes=N) to enable parallel runs
+DEFAULT_LAMMPS_PATHS = [r'C:\LAMMPS\bin\lmp.exe', 'lmp']
+DEFAULT_MPIEXEC_PATHS = [r'C:\Program Files\Microsoft MPI\Bin\mpiexec.exe', 'mpiexec']
+
+__version__ = '0.5.3_SION_mod1'
 
 
 class SimulationError(Exception):
@@ -48,7 +81,9 @@ class Simulation(list):
         name = name.replace(' ', '_').lower()
 
         self.attrs = Attributes()
-        self.attrs['executable'] = 'lmp'
+        self.attrs['gpu'] = None
+        self.attrs['executable'] = self._find_lammps_executable()
+        self.attrs['thermo_styles'] = ['step', 'cpu']
         self.attrs['timestep'] = 1e-6
         self.attrs['domain'] = [1e-2, 1e-2, 1e-2]  # length, width, height
         self.attrs['name'] = name
@@ -58,9 +93,53 @@ class Simulation(list):
         self.attrs['version'] = __version__
         self.attrs['rigid'] = {'exists': False}
 
-        # # initalise the h5 file
-        # with h5py.File(self.attrs['name'] + '.h5', 'w') as f:
-        #     pass
+        # mpi/omp: set via set_parallel(mpi_processes=N, omp_threads=M) or execute(..., mpi_processes=..., omp_threads=...)
+        self.attrs['mpi'] = {
+            'enabled': os.environ.get('USE_MPI', '0') == '1',
+            'processes': int(os.environ.get('MPI_NUM_PROCESSES', '4')),
+            'executable': self._find_mpiexec(),
+        }
+        self.attrs['omp_threads'] = int(os.environ.get('OMP_NUM_THREADS', '1'))
+
+    @staticmethod
+    def _find_lammps_executable():
+        """Try to find lmp.exe in common locations."""
+        for path in DEFAULT_LAMMPS_PATHS:
+            if os.path.isfile(path):
+                return path
+            found = shutil.which(path)
+            if found:
+                return found
+        return 'lmp'
+
+    @staticmethod
+    def _find_mpiexec():
+        """Try to find mpiexec in common locations."""
+        for path in DEFAULT_MPIEXEC_PATHS:
+            if os.path.isfile(path):
+                return path
+            found = shutil.which(path)
+            if found:
+                return found
+        return None
+
+    def set_mpi(self, enabled=True, processes=4, executable=None):
+        """Turn on MPI. Call like sim.set_mpi(processes=8)."""
+        self.attrs['mpi']['enabled'] = enabled
+        self.attrs['mpi']['processes'] = processes
+        if executable:
+            self.attrs['mpi']['executable'] = executable
+        elif not self.attrs['mpi']['executable']:
+            self.attrs['mpi']['executable'] = self._find_mpiexec()
+        return self
+
+    def set_parallel(self, mpi_processes=None, omp_threads=None, mpiexec=None):
+        """Set MPI and OpenMP for the run. Call like sim.set_parallel(mpi_processes=4, omp_threads=1)."""
+        if mpi_processes is not None:
+            self.set_mpi(enabled=True, processes=mpi_processes, executable=mpiexec)
+        if omp_threads is not None:
+            self.attrs['omp_threads'] = int(omp_threads)
+        return self
 
     def __contains__(self, this):
         """Check if an item exists in the simulation using its ``uid``.
@@ -161,7 +240,7 @@ class Simulation(list):
                 "'uid' count unless it is for the same ion group.")
 
         # load jinja2 template
-        env = j2.Environment(loader=j2.PackageLoader('pylion', 'templates'),
+        env = j2.Environment(loader=j2.PackageLoader('sion.pylion', 'templates'),
                              trim_blocks=True)
         template = env.get_template(self.attrs['template'])
         rendered = template.render({**self.attrs, **odict})
@@ -180,30 +259,79 @@ class Simulation(list):
                                       for line in fix['code']
                                       if line.startswith('dump')]
 
-    @save_atttributes_and_files
-    def execute(self):
-        """Write lammps input file and run the simulation.
-        """
+    def _build_command(self):
+        """Builds the lammps command, with mpiexec if enabled."""
+        lammps_args = [
+            self.attrs['executable'],
+            '-log', self.attrs['name'] + '.lmp.log',
+            '-in', self.attrs['name'] + '.lammps',
+        ]
+        mpi_cfg = self.attrs.get('mpi', {})
+        use_mpi = mpi_cfg.get('enabled', False)
+        mpiexec = mpi_cfg.get('executable')
+        num_procs = mpi_cfg.get('processes', 4)
+        if use_mpi and mpiexec:
+            cmd_parts = [
+                f'"{mpiexec}"' if ' ' in mpiexec else mpiexec,
+                '-n', str(num_procs),
+                f'"{self.attrs["executable"]}"' if ' ' in self.attrs['executable'] else self.attrs['executable'],
+                '-log', self.attrs['name'] + '.lmp.log',
+                '-in', self.attrs['name'] + '.lammps',
+            ]
+            return ' '.join(cmd_parts)
+        if use_mpi and not mpiexec:
+            print('[!] mpi enabled but mpiexec not found, running single process')
+        return ' '.join(lammps_args)
 
+    @save_atttributes_and_files
+    def execute(self, mpi_processes=None, omp_threads=None):
+        """Write lammps input file and run the simulation.
+
+        Optional: mpi_processes, omp_threads override parallelization for this run
+        (otherwise use set_parallel() or attrs).
+        """
         if getattr(self, '_hasexecuted', False):
             raise SimulationError(
                 'Simulation has executed already. Do not run it again.')
 
+        if mpi_processes is not None:
+            self.set_mpi(enabled=True, processes=mpi_processes)
+        if omp_threads is not None:
+            self.attrs['omp_threads'] = int(omp_threads)
+
+        omp = self.attrs.get('omp_threads', 1)
+        os.environ['OMP_NUM_THREADS'] = str(omp)
+        if self.attrs.get('mpi', {}).get('enabled'):
+            print(f'[parallel] {self.attrs["mpi"]["processes"]} MPI × {omp} OMP')
+
         self._writeinputfile()
+
+        child = None
 
         def signal_handler(sig, frame):
             print('Simulation terminated by the user.')
-            child.terminate()
-            # sys.exit(0)
+            if child is not None:
+                child.terminate()
 
         signal.signal(signal.SIGINT, signal_handler)
 
-        child = pexpect.spawn(' '.join([self.attrs['executable'], '-in',
-                              self.attrs['name'] + '.lammps']), timeout=None,
-                              encoding='utf8')
+        cmd = self._build_command()
+        # SION mod: subprocess gives reliable line-by-line streaming for lmp.exe
+        # and mpiexec on Windows.
+        # Popen + PIPE gives reliable line-by-line streaming; shell=True keeps mpiexec command strings.
+        child = subprocess.Popen(
+            cmd,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            shell=True,
+            text=True,
+            bufsize=1,
+        )
 
-        self._process_stdout(child)
-        child.close()
+        self._process_stdout(child.stdout)
+        returncode = child.wait()
+        if returncode:
+            raise SimulationError(f'lammps exited with code {returncode}')
 
         self._hasexecuted = True
 

@@ -1,4 +1,5 @@
 # -*- coding: utf8 -*-
+# Modified for SION.
 #
 #   electrode: numeric tools for Paul traps
 #
@@ -20,7 +21,12 @@
 from __future__ import (absolute_import, print_function,
         unicode_literals, division)
 
-import numpy as np
+from numpy import array
+# namespace so code can keep using np.xxx
+class _NP:
+    pass
+np = _NP()
+np.array = array
 
 # qualitative color map
 # http://colorbrewer2.org/index.php?type=qualitative&scheme=Set3&n=12

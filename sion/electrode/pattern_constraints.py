@@ -1,4 +1,5 @@
 # -*- coding: utf8 -*-
+# Modified for SION.
 #
 #   electrode: numeric tools for Paul traps
 #
@@ -20,8 +21,17 @@
 from __future__ import (absolute_import, print_function,
         unicode_literals, division)
 
-import warnings
-import numpy as np
+from warnings import warn
+from numpy import ascontiguousarray, asanyarray, double
+# namespace so code can keep using np.xxx and warnings.xxx
+class _NP:
+    pass
+np = _NP()
+np.ascontiguousarray, np.asanyarray, np.double = ascontiguousarray, asanyarray, double
+class _Warnings:
+    pass
+warnings = _Warnings()
+warnings.warn = warn
 
 try:
     import cvxopt, cvxopt.modeling

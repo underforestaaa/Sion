@@ -1,4 +1,5 @@
 # -*- coding: utf8 -*-
+# Modified for SION.
 #
 #   electrode: numeric tools for Paul traps
 #
@@ -20,7 +21,18 @@
 from __future__ import (absolute_import, print_function,
         unicode_literals, division)
 
-import numpy as np
+from numpy import (array, zeros, asanyarray, double, ones_like, pi, sign,
+    concatenate, r_, ones, intc, arange, c_, roll, empty, gradient)
+# namespace so code can keep using np.xxx
+class _NP:
+    pass
+np = _NP()
+np.array, np.zeros, np.asanyarray, np.double, np.ones_like, np.pi, np.sign = (
+    array, zeros, asanyarray, double, ones_like, pi, sign)
+np.concatenate, np.r_, np.ones, np.intc, np.arange, np.c_ = (
+    concatenate, r_, ones, intc, arange, c_)
+np.roll, np.empty, np.gradient = roll, empty, gradient
+
 from scipy.ndimage.interpolation import map_coordinates
 
 from .utils import area_centroid, construct_derivative

@@ -1,22 +1,37 @@
 from .pylion.lammps import lammps
+import builtins
 from numpy import (ones, array, max, concatenate, pi, tanh, exp, arange, mean, min, abs, std, 
                    identity, sqrt, zeros, vstack, sum, sin, cos, diag, dot, argmax, inner, 
                    arccos, isnan, any, sign, linspace, block, array_split)
 from numpy.linalg import (norm, eig, eigh, inv)
 from numpy.random import (choice, random)
-from matplotlib.pyplot import (subplots, tight_layout, savefig, show, plot, figure, ylim, xlim, 
-locator_params, tick_params, fill_between, ylabel, xlabel, legend, scatter)
-from matplotlib.pyplot import cm
-from matplotlib import colors
 from .electrode import (System, PolygonPixelElectrode, PointPixelElectrode)
 from scipy.optimize import (minimize, curve_fit)
-import scipy.constants as ct
-from gdspy import Polygon, GdsLibrary
-from shapely.geometry import Point
-from shapely.geometry.polygon import Polygon as plgn
+from scipy.constants import e, epsilon_0, atomic_mass
+# namespace so code can keep using ct.e, ct.epsilon_0, ct.atomic_mass
+class _CT:
+    pass
+ct = _CT()
+ct.e, ct.epsilon_0, ct.atomic_mass = e, epsilon_0, atomic_mass
 from tqdm import tqdm
 from warnings import simplefilter, catch_warnings, warn
-from skopt import dummy_minimize
+
+
+def lazy_matplotlib():
+    """Import matplotlib.pyplot and matplotlib.colors only when needed. Returns a namespace with subplots, savefig, etc."""
+    from matplotlib.pyplot import (subplots, tight_layout, savefig, show, plot, figure, ylim, xlim,
+        locator_params, tick_params, fill_between, ylabel, xlabel, legend, scatter)
+    from matplotlib.pyplot import cm
+    from matplotlib import colors
+    class _Mpl:
+        pass
+    m = _Mpl()
+    m.subplots, m.tight_layout, m.savefig, m.show = subplots, tight_layout, savefig, show
+    m.plot, m.figure, m.ylim, m.xlim = plot, figure, ylim, xlim
+    m.locator_params, m.tick_params, m.fill_between = locator_params, tick_params, fill_between
+    m.ylabel, m.xlabel, m.legend, m.scatter, m.cm, m.colors = ylabel, xlabel, legend, scatter, cm, colors
+    return m
+
 
 """
 Functions, simulating the ion dynamics above planar traps
@@ -227,7 +242,7 @@ def point_trap(uid, trap, cover=(0, 0)):
     """
     Simulates an arbitrary point trap. The point trap means a trap of an arbitrary shape, which is approximated by 
     circle-shaped electrodes, called points. The points potential is approximated from the fact, that it has 
-    infinitesemal radius, so the smaller are points, the more precise is the simulation (but slower).
+    infinitesimal radius, so the smaller are points, the more precise is the simulation (but slower).
     
     Parameters
     ----------
@@ -437,7 +452,7 @@ def linear_shuttling_voltage(s, x0, d, T, dc_set, shuttlers=0, N=4, vmin=-15, vm
     need_func : bool, optional, default is False
         if True, the approximation functions of voltage sequences are provided, which are used for MD simulation of shuttling
     freq_coeff : float, optional, default is 0
-        If not 0, optimimization will try to minimize secular frequency variations during shuttling. Coefficient 
+        If not 0, optimization will try to minimize secular frequency variations during shuttling. Coefficient 
         defines the input of the frequency variation to the loss function. If it's too high, optimization will not 
         succeed for shuttling, if it's too low, frequency variations will be ignored. Usually optimal value is between
         0.1 and 100, and has to be found manually.
@@ -503,10 +518,10 @@ def approx_linear_shuttling(voltage_seq, T, res):
                 with catch_warnings():
                     simplefilter("ignore")
                     popt_tan, _ = curve_fit(fitter_tan, x_data, seq, [abs(dif/2), dif/T, -T/2, mean_seq])
-                    tan = norm(seq - fitter_tan(x_data, *popt_tan))
+                    tan_residual = norm(seq - fitter_tan(x_data, *popt_tan))
             except:
                 att += 1
-                tan = 1e6
+                tan_residual = 1e6
             try:
                 with catch_warnings():
                     simplefilter("ignore")
@@ -518,7 +533,7 @@ def approx_linear_shuttling(voltage_seq, T, res):
             if att == 2:
                 warn(f"Failed to fit {i}th electrode. Needs custom curve fitting")
             
-            if tan > norm_seq:
+            if tan_residual > norm_seq:
                 funcs.append('((%5.6f) * exp((%5.6f) * (step*dt - (%5.6f))^2) + (%5.6f))' % tuple(popt_norm))
             else:
                 funcs.append('((%5.6f) * (1 - 2/(exp(2*((%5.6f) * (step*dt + (%5.6f)))) + 1)) + (%5.6f))' % tuple(popt_tan))
@@ -549,7 +564,7 @@ def lossf_shuttle(uset, s, omegas, positions, L, dc_set, shuttlers, freq_coeff, 
         if ==[2,4,6] for example, only 2, 4 and 6th electrodes are participating,
         the rest are stationary dc
     freq_coeff : float
-        If not 0, optimimization will try to minimize secular frequency variations during shuttling. Coefficient 
+        If not 0, optimization will try to minimize secular frequency variations during shuttling. Coefficient 
         defines the input of the frequency variation to the loss function. If it's too high, optimization will not 
         succeed for shuttling, if it's too low, frequency variations will be ignored. Usually optimal value is between
         0.1 and 100, and has to be found manually.
@@ -637,7 +652,7 @@ def shuttling_voltage(s, starts, routes, T, dc_set, shuttlers=0, vmin=-15, vmax=
         if True, the approximation functions of voltage sequences on all DC electrodes
         are provided, which are used for MD simulation of shuttling
     freq_coeff : float, optional, default is 0
-        If not 0, optimimization will try to minimize secular frequency variations during shuttling. Coefficient 
+        If not 0, optimization will try to minimize secular frequency variations during shuttling. Coefficient 
         defines the input of the frequency variation to the loss function. If it's too high, optimization will not 
         succeed for shuttling, if it's too low, frequency variations will be ignored. Usually optimal value is between
         0.1 and 100, and has to be found manually.
@@ -966,7 +981,8 @@ def circle_packaging(scale, boundary, n, res):
         areas of each point (equal float)
 
     """
-    centers = [[[i + j*.5, j*3**.5*.5] for j in range(-res - min(0, i), res - max(0, i) + 1)] for i in range(-res, res + 1)]
+    # Use python builtins min/max here; numpy min/max interpret the second argument as axis.
+    centers = [[[i + j*.5, j*3**.5*.5] for j in range(-res - builtins.min(0, i), res - builtins.max(0, i) + 1)] for i in range(-res, res + 1)]
     x = vstack(centers)/(res + .5)*scale # centers
     
     a = ones(len(x))*3**.5/(res + .5)**2/2*scale**2 # areas
@@ -1222,7 +1238,8 @@ def n_wire_trap_design(top_dc, bottom_dc, central_wires, rf_indxs, Urf=0, gap=0,
 
     # creates a plot of electrode
     if need_plot:
-        fig, ax = subplots(1, 2, figsize=figsize)
+        mpl = lazy_matplotlib()
+        fig, ax = mpl.subplots(1, 2, figsize=figsize)
         s.plot(ax[0])
         s.plot_voltages(ax[1], u=s.rfs)
         # u = s.rfs sets the voltage-type for the voltage plot to RF-voltages (DC are not shown)
@@ -1236,8 +1253,8 @@ def n_wire_trap_design(top_dc, bottom_dc, central_wires, rf_indxs, Urf=0, gap=0,
             axi.set_xlim(-xmax, xmax)
             axi.set_ylim(-ymaxn, ymaxp)
         if save_plot:
-            tight_layout()
-            savefig(save_plot)
+            mpl.tight_layout()
+            mpl.savefig(save_plot)
             
     if need_coordinates:
         return s, RF, DC
@@ -1477,8 +1494,9 @@ def point_trap_design(frequencies, rf_voltages, dc_voltages, boundaries, scale, 
     trap = [trap_rf, trap_dc]
     
     if need_plot:
+        mpl = lazy_matplotlib()
         if len(dc_voltages)>0:
-            fig, ax = subplots(1,2,figsize=figsize)
+            fig, ax = mpl.subplots(1,2,figsize=figsize)
             s.plot_voltages(ax[0], u=s.rfs)
             ax[0].set_xlim((-scale, scale))
             ax[0].set_ylim((-scale, scale))
@@ -1490,20 +1508,20 @@ def point_trap_design(frequencies, rf_voltages, dc_voltages, boundaries, scale, 
             ax[0].set_aspect('equal', adjustable='box')
             ax[1].set_aspect('equal', adjustable='box')
             try:
-                cmap = cm.RdBu_r
-                norm_color = colors.Normalize(vmin=min(dc_voltages), vmax=max(dc_voltages))
+                cmap = mpl.cm.RdBu_r
+                norm_color = mpl.colors.Normalize(vmin=min(dc_voltages), vmax=max(dc_voltages))
     
-                cb = fig.colorbar(cm.ScalarMappable(norm=norm_color, cmap=cmap),ax=ax, shrink=1, aspect=25)
+                cb = fig.colorbar(mpl.cm.ScalarMappable(norm=norm_color, cmap=cmap),ax=ax, shrink=1, aspect=25)
     
                 cb.ax.tick_params(labelsize=8)
                 cb.set_label('Voltage, V', fontsize = 8)
             except:
                 pass
             if save_plot:
-                savefig(save_plot, bbox_inches='tight')
+                mpl.savefig(save_plot, bbox_inches='tight')
             
         else:
-            fig, ax = subplots(1,2,figsize=figsize)
+            fig, ax = mpl.subplots(1,2,figsize=figsize)
             s.plot_voltages(ax[0], u=s.rfs)
             ax[0].set_xlim((-scale, scale))
             ax[0].set_ylim((-scale, scale))
@@ -1515,8 +1533,8 @@ def point_trap_design(frequencies, rf_voltages, dc_voltages, boundaries, scale, 
             ax[0].set_aspect('equal', adjustable='box')
             ax[1].set_aspect('equal', adjustable='box')
             if save_plot:
-                savefig(save_plot)
-        show()
+                mpl.savefig(save_plot)
+        mpl.show()
 
     if need_coordinates:
         return s, trap
@@ -1554,6 +1572,7 @@ def polygons_from_gds(gds_lib, L=1e-6, cheight=0, cmax=0, need_coordinates=True,
 
 
     '''
+    from gdspy import GdsLibrary
     lib = GdsLibrary(infile=gds_lib)
     count = 0
     full_elec = []
@@ -1569,7 +1588,8 @@ def polygons_from_gds(gds_lib, L=1e-6, cheight=0, cmax=0, need_coordinates=True,
     
     # creates a plot of electrode
     if need_plot:
-        fig, ax = subplots(1, 1, figsize = [30, 30])
+        mpl = lazy_matplotlib()
+        fig, ax = mpl.subplots(1, 1, figsize = [30, 30])
         s.plot(ax)
         ax.set_title("electrode layout")
         ymaxes = []
@@ -1584,8 +1604,8 @@ def polygons_from_gds(gds_lib, L=1e-6, cheight=0, cmax=0, need_coordinates=True,
         ax.set_xlim(min([1.2*min(xmines), 0.8*min(xmines)]), max([1.2*max(xmaxes), 0.8*max(xmaxes)]))
         ax.set_ylim(min([1.2*min(ymines), 0.8*min(ymines)]), max([1.2*max(ymaxes), 0.8*max(ymaxes)]))
         if save_plot:
-            tight_layout()
-            savefig(save_plot)
+            mpl.tight_layout()
+            mpl.savefig(save_plot)
             
     if need_coordinates:
         return s, full_elec
@@ -1604,7 +1624,7 @@ def polygons_reshape(full_electrode_list, order, L=1e-6, need_plot=True, need_co
     full_electrode_list : list shape([number of electrodes, electrode shape])
         electrodes coordinates in SU from polygon_to_gds().
     order : list shape([number of electrodes])
-        Desired order, along which electrode indeces will be reassigned.
+        Desired order, along which electrode indices will be reassigned.
     L : float, optional, default is 1e-6
         Dimension scale of the electrode. The default is 1e-6 which means um.
     need_plot : bool, optional, default is False
@@ -1638,7 +1658,8 @@ def polygons_reshape(full_electrode_list, order, L=1e-6, need_plot=True, need_co
     
     # creates a plot of electrode
     if need_plot:
-        fig, ax = subplots(1, 1, figsize = [30, 30])
+        mpl = lazy_matplotlib()
+        fig, ax = mpl.subplots(1, 1, figsize = [30, 30])
         s.plot(ax)
         ax.set_title("electrode layout")
         ymaxes = []
@@ -1653,8 +1674,8 @@ def polygons_reshape(full_electrode_list, order, L=1e-6, need_plot=True, need_co
         ax.set_xlim(min([1.2*min(xmines), 0.8*min(xmines)]), max([1.2*max(xmaxes), 0.8*max(xmaxes)]))
         ax.set_ylim(min([1.2*min(ymines), 0.8*min(ymines)]), max([1.2*max(ymaxes), 0.8*max(ymaxes)]))
         if save_plot:
-            tight_layout()
-            savefig(save_plot)
+            mpl.tight_layout()
+            mpl.savefig(save_plot)
             
     if need_coordinates:
         return s, full_elec
@@ -1678,6 +1699,8 @@ def gapping(elec, gap):
         Shrinked electrode.
 
     '''
+    from shapely.geometry import Point
+    from shapely.geometry.polygon import Polygon as plgn
     poly = plgn(elec)
     gapped = []
     newel = concatenate([[elec[-1]], elec, [elec[0]]])
@@ -1773,6 +1796,7 @@ def polygon_to_gds(trap, name, gap=0):
     None.
 
     '''
+    from gdspy import Polygon, GdsLibrary
     lib = GdsLibrary()
     try:
         r = choice(1000, 1)
@@ -2301,9 +2325,9 @@ def reshape_modes(ion_number, harm_modes, harm_freqs):
 Anharmonic Mathieu modes
 """
 
-def coulumb_hessian(ion_positions, charges):
+def coulomb_hessian(ion_positions, charges):
     '''
-    Returns Hessian of Coulomb potential for ions near equilibrium postions in harmonic approximation.
+    Returns Hessian of Coulomb potential for ions near equilibrium positions in harmonic approximation.
 
     Parameters
     ----------
@@ -2567,7 +2591,7 @@ def crystal_modes(ion_positions, ion_masses, s, rf_set, Omega, dc_set, L = 1e-6,
     except:
         ion_masses = ones(N)*ion_masses
 
-    С = coulumb_hessian(ion_positions, charges)
+    C = coulomb_hessian(ion_positions, charges)
 
     if anharmonic:
         alpha = 1
@@ -2579,7 +2603,7 @@ def crystal_modes(ion_positions, ion_masses, s, rf_set, Omega, dc_set, L = 1e-6,
     A, Q, M_matrix = trap_hessian(ion_positions, s, rf_set, Omega, dc_set, ion_masses, charges, L, N, alpha, alpha2)
 
     scale = 1/((Omega)**2 )
-    A = A + С
+    A = A + C
     A = 4*scale*dot(M_matrix, dot(A, M_matrix))
     Q = 2*scale*dot(M_matrix, dot(Q, M_matrix))
 
@@ -2734,25 +2758,25 @@ def stability(s, ion_masses, Omega, minimum, charges=1, L=1e-6, need_plot=True, 
             params[f'Ion (M = {round(M/ct.atomic_mass):d}, Z = {round(Z/ct.e):d})'] = {'a':areal, 'q':qreal}
 
     rot = dot(inv(BasQ),BasA)
-    thetha = arccos(rot[0,0])
-    c = cos(2*thetha)
-    sin = sin(2*thetha)
+    theta = arccos(rot[0,0])
+    c = cos(2*theta)
+    sin_2theta = sin(2*theta)
     params['\u03B1'] = alpha
-    params['\u03B8'] = thetha
+    params['\u03B8'] = theta
 
     q = linspace(0,1.5, 1000)
     ax = -q**2/2
     ab = q**2/(2*alpha)
-    ac = 1 - c*q - (c**2/8 + (2*sin**2*(5+alpha))/((1+alpha)*(9+alpha)))*q**2
-    ad = -(1 - c*q - (c**2/8 + (2*sin**2*(5+1/alpha))/((1+1/alpha)*(9+1/alpha)))*q**2)/alpha
+    ac = 1 - c*q - (c**2/8 + (2*sin_2theta**2*(5+alpha))/((1+alpha)*(9+alpha)))*q**2
+    ad = -(1 - c*q - (c**2/8 + (2*sin_2theta**2*(5+1/alpha))/((1+1/alpha)*(9+1/alpha)))*q**2)/alpha
 
     aa = 1/(2*alpha)
     bb = 1
     cc = -c
-    dd = -(c**2/8 + (2*sin**2*(5+alpha))/((1+alpha)*(9+alpha)))
+    dd = -(c**2/8 + (2*sin_2theta**2*(5+alpha))/((1+alpha)*(9+alpha)))
     ee = -1/alpha
     ff = c/alpha
-    gg = (c**2/8 + (2*sin**2*(5+1/alpha))/((1+1/alpha)*(9+1/alpha)))/alpha
+    gg = (c**2/8 + (2*sin_2theta**2*(5+1/alpha))/((1+1/alpha)*(9+1/alpha)))/alpha
     hh = -1/2
 
     q_crit = max([(-(cc-ff) - sqrt((cc-ff)**2 - 4*(dd-gg)*(bb-ee)))/(2*(dd-gg)), (-(cc-ff) + sqrt((cc-ff)**2 - 4*(dd-gg)*(bb-ee)))/(2*(dd-gg))])
@@ -2777,41 +2801,42 @@ def stability(s, ion_masses, Omega, minimum, charges=1, L=1e-6, need_plot=True, 
 
     
     if need_plot:
-        fig = figure()
+        mpl = lazy_matplotlib()
+        fig = mpl.figure()
         fig.set_size_inches(7,5)
-        plot(q,ax, 'g')
-        plot(q,ab, 'g')
-        plot(q,ac, 'g')
-        plot(q,ad, 'g')
+        mpl.plot(q,ax, 'g')
+        mpl.plot(q,ab, 'g')
+        mpl.plot(q,ac, 'g')
+        mpl.plot(q,ad, 'g')
         
         y1 = array(list(map(max, zip(ax, ad))))
         y2 = array(list(map(min, zip(ab, ac))))
         
         y_lim = max(array([a_crit_upper, -a_crit_lower]))
         
-        ylim(-y_lim*1.25, y_lim*1.25)
-        xlim(0, q_crit*1.25)
-        plot(q,y1, 'g')
-        plot(q,y2, 'g')
-        xlabel('q', fontsize = '30')
-        ylabel('a', fontsize = '30')
-        fill_between(q, y1, y2,where=y2>=y1, interpolate = True, color = 'skyblue')
-        tick_params(axis='both', which='major', labelsize=14)
+        mpl.ylim(-y_lim*1.25, y_lim*1.25)
+        mpl.xlim(0, q_crit*1.25)
+        mpl.plot(q,y1, 'g')
+        mpl.plot(q,y2, 'g')
+        mpl.xlabel('q', fontsize = '30')
+        mpl.ylabel('a', fontsize = '30')
+        mpl.fill_between(q, y1, y2,where=y2>=y1, interpolate = True, color = 'skyblue')
+        mpl.tick_params(axis='both', which='major', labelsize=14)
         
-        locator_params(axis='x', nbins=6)
-        locator_params(axis='y', nbins=6)
+        mpl.locator_params(axis='x', nbins=6)
+        mpl.locator_params(axis='y', nbins=6)
        
         colors=["maroon", 'peru',"darkgoldenrod",'magenta', "orangered", 'darkorange', 'crimson', 'brown']
         k = 0
         for M, Z in zip(ion_masses, charges):
-            scatter(params[f'Ion (M = {round(M/ct.atomic_mass):d}, Z = {round(Z/ct.e):d})']['q'], params[f'Ion (M = {round(M/ct.atomic_mass):d}, Z = {round(Z/ct.e):d})']['a'], s = 40, edgecolor='black', color = colors[k], label = f'Ion (M = {round(M/ct.atomic_mass):d}, Z = {round(Z/ct.e):d})' )
+            mpl.scatter(params[f'Ion (M = {round(M/ct.atomic_mass):d}, Z = {round(Z/ct.e):d})']['q'], params[f'Ion (M = {round(M/ct.atomic_mass):d}, Z = {round(Z/ct.e):d})']['a'], s = 40, edgecolor='black', color = colors[k], label = f'Ion (M = {round(M/ct.atomic_mass):d}, Z = {round(Z/ct.e):d})' )
             k = (k+1)%8
-        legend()
-        tight_layout()
+        mpl.legend(framealpha=1.0, facecolor='white')
+        mpl.tight_layout()
         if save_plot:
-            savefig(save_plot)
+            mpl.savefig(save_plot)
     
-        show()
+        mpl.show()
         
     return params
 
@@ -2844,9 +2869,9 @@ def frequency_optimization(s, ion_masses, positions, axis, omegas, start_dcset, 
     start_dcset : list shape([number of dc electrodes])
         Starting DC voltages for the optimization (on all electrodes).
     numbers : list shape([number of optimizing electrodes]) or int, optional, default is 0
-        list of the indeces of DC electrodes, used for optimization. If 0, all DC elecrtodes are used for optimization.
+        list of the indices of DC electrodes, used for optimization. If 0, all DC electrodes are used for optimization.
     eps : float, optional, default is 1e-9
-        Maximal loss, at which the algorithm considers the implementation succesful. If lower eps are possible, 
+        Maximal loss, at which the algorithm considers the implementation successful. If lower eps are possible, 
         the algorithm will keep optimizing according to tol.
     tol : float, optional, default is 1e-18
         Tolerance for termination from scipy.optimize.
@@ -2864,7 +2889,7 @@ def frequency_optimization(s, ion_masses, positions, axis, omegas, start_dcset, 
         Number of iterations, at which the current voltage set will be as callback printed.
     micro : float, optional, default is 0
         If non 0, algorithm will attempt to compensate micromotion by keeping potential minima at the starting positions.
-        Coeff value coresponds to the input of minimum displacement in loss function, and should be evaluated emperically.
+        Coeff value corresponds to the input of minimum displacement in loss function, and should be evaluated empirically.
         Approximate range: 0.001 to 10
     voltage_bounds : tuple (float,float) or list of tuples len(number of dc electrodes), optional, default is (-15,15)
         List of voltage bounds on each DC electrode. If tuple, then each electrode will be assigned the same bounds. 
@@ -2902,7 +2927,7 @@ def frequency_optimization(s, ion_masses, positions, axis, omegas, start_dcset, 
     rf_set = s.rfs
     numbers = array(numbers)
     omegas = array(omegas).T
-    start_dcset = array(start_dcset)
+    start_dcset = array(start_dcset, dtype=float)
 
     def v_lossf(uset):
         with catch_warnings():
@@ -2950,6 +2975,7 @@ def frequency_optimization(s, ion_masses, positions, axis, omegas, start_dcset, 
         voltage_bounds = [(voltage_bounds[0],voltage_bounds[1]) for n in range(len(numbers))]
 
     if find_initial_guess:
+        from skopt import dummy_minimize
         with tqdm(total=call_num, desc='Finding initial guess') as pbarn:
             with catch_warnings():
                 simplefilter("ignore")
@@ -2969,7 +2995,7 @@ def frequency_optimization(s, ion_masses, positions, axis, omegas, start_dcset, 
                            callback=callback, tol = tol, bounds = voltage_bounds, options = {'maxiter' : 1000})
             loss = res.fun
             if loss > eps:
-                warn(f"\nFrequency mismatch above accuracy treshold {eps}\nTry decreasing tol or apply find_initial_guess=True or increase call_num\nOptimization result: {res}")
+                warn(f"\nFrequency mismatch above accuracy threshold {eps}\nTry decreasing tol or apply find_initial_guess=True or increase call_num\nOptimization result: {res}")
             
             print(f'Final loss = {res.fun}')
             uset = res.x
@@ -2996,9 +3022,9 @@ def mode_optimization(s, alpha, potential_minimum, start_dcset, numbers=0, eps=1
     start_dcset : array shape([number of dc electrodes])
         Starting DC voltages for the optimization (on all electrodes).
     numbers : list shape([number of optimizing electrodes]) or int, optional, default is 0
-        list of the indeces of DC electrodes, used for optimization. If 0, all DC elecrtodes are used for optimization.
+        list of the indices of DC electrodes, used for optimization. If 0, all DC electrodes are used for optimization.
     eps : float, optional, default is 1e-9
-        Maximal loss, at which the algorithm considers the implementation succesful. If lower eps are possible, 
+        Maximal loss, at which the algorithm considers the implementation successful. If lower eps are possible, 
         the algorithm will keep optimizing according to tol.
     tol : float, optional, default is 1e-18
         Tolerance for termination from scipy.optimize.
@@ -3006,7 +3032,7 @@ def mode_optimization(s, alpha, potential_minimum, start_dcset, numbers=0, eps=1
         Number of iterations, at which the current voltage set will be as callback printed.
     micro : float, optional, default is 1
         If non 0, algorithm will attempt to compensate micromotion by keeping potential minima at the starting positions.
-        Coeff value coresponds to the input of minimum displacement in loss function, and should be evaluated emperically.
+        Coeff value corresponds to the input of minimum displacement in loss function, and should be evaluated empirically.
         Approximate range: 0.001 to 10
     voltage_bounds : tuple (float,float) or list of tuples len(number of dc electrodes), optional, default is (-15,15)
         List of voltage bounds on each DC electrode. If tuple, then each electrode will be assigned the same bounds. 
@@ -3024,7 +3050,7 @@ def mode_optimization(s, alpha, potential_minimum, start_dcset, numbers=0, eps=1
         numbers = arange(len(start_dcset))
         
     numbers = array(numbers)
-    start_dcset = array(start_dcset)
+    start_dcset = array(start_dcset, dtype=float)
     
     def v_lossf(uset):
         with catch_warnings():
@@ -3078,7 +3104,7 @@ def mode_optimization(s, alpha, potential_minimum, start_dcset, numbers=0, eps=1
                            bounds = voltage_bounds, options = {'maxiter' : 10000})
             loss = res.fun
             if loss > eps:
-                warn(f"\nMode mismatch above accuracy treshold {eps}\nTry decreasing tol or change micro or change initial guess or change trap geometry\nOptimization result: {res}")
+                warn(f"\nMode mismatch above accuracy threshold {eps}\nTry decreasing tol or change micro or change initial guess or change trap geometry\nOptimization result: {res}")
             
             print(f'Final loss = {res.fun}')
             uset = res.x
@@ -3102,9 +3128,9 @@ def position_optimization(s, positions, start_dcset, numbers=0, eps=1e-2, tol=1e
     start_dcset : list shape([number of dc electrodes])
         Starting DC voltages for the optimization (on all electrodes).
     numbers : list shape([number of optimizing electrodes]) or int, optional, default is 0
-        list of the indeces of DC electrodes, used for optimization. If 0, all DC elecrtodes are used for optimization.
+        list of the indices of DC electrodes, used for optimization. If 0, all DC electrodes are used for optimization.
     eps : float, optional, default is 1e-2
-        Maximal loss, at which the algorithm considers the implementation succesful. If lower eps are possible, 
+        Maximal loss, at which the algorithm considers the implementation successful. If lower eps are possible, 
         the algorithm will keep optimizing according to tol.
     tol : float, optional, default is 1e-18
         Tolerance for termination from scipy.optimize.
@@ -3144,7 +3170,7 @@ def position_optimization(s, positions, start_dcset, numbers=0, eps=1e-2, tol=1e
     
     rf_set = s.rfs
     numbers = array(numbers)
-    start_dcset = array(start_dcset)
+    start_dcset = array(start_dcset, dtype=float)
 
     def v_lossf(uset):
         with catch_warnings():
@@ -3194,7 +3220,7 @@ def position_optimization(s, positions, start_dcset, numbers=0, eps=1e-2, tol=1e
                            callback=callback, tol = tol, bounds = voltage_bounds, options = {'maxiter' : 10000})
             loss = res.fun
             if loss > eps:
-                warn(f"\nPosition mismatch above accuracy treshold {eps}\nTry decreasing tol or change start_dcset or change geometry\nOptimization result: {res}")
+                warn(f"\nPosition mismatch above accuracy threshold {eps}\nTry decreasing tol or change start_dcset or change geometry\nOptimization result: {res}")
             
             print(f'Final loss = {res.fun}')
             uset = res.x

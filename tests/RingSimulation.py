@@ -8,17 +8,21 @@ the increase time, required for the simulation.
 
 
 from __future__ import division
-import pylion as pl
+import sion.pylion as pl
 from pathlib import Path
 import matplotlib as mpl
 import matplotlib.pyplot as plt, numpy as np, scipy.constants as ct
 from mpl_toolkits.mplot3d import Axes3D
-from electrode import (System, PolygonPixelElectrode, PointPixelElectrode)
+from sion.electrode import (System, PolygonPixelElectrode, PointPixelElectrode)
 
 import sion as sn
 
 
 if __name__ == "__main__":
+    output_dir = Path(__file__).resolve().parent / "supplementary"
+    output_dir.mkdir(parents=True, exist_ok=True)
+    ring_dump_path = output_dir / "posring.txt"
+
     #trap parameters
     Vrf = 120.  # RF peak voltage in V
     mass = 40 * ct.atomic_mass  # ion mass
@@ -51,7 +55,7 @@ if __name__ == "__main__":
     positions = sn.ions_in_order([0,0,95e-6], ion_number, distance)
     
     #insert your path to this file here
-    name = Path('RingSimulation.py').stem
+    name = str(output_dir / Path(__file__).stem)
     
     sim = pl.Simulation(name)
     
@@ -67,12 +71,12 @@ if __name__ == "__main__":
     sim.append(pl.langevinbath(0, 1e-7))
     
     #files with information
-    sim.append(pl.dump('posring.txt', variables=['x', 'y', 'z'], steps=10))
+    sim.append(pl.dump(str(ring_dump_path), variables=['x', 'y', 'z'], steps=10))
     sim.append(pl.evolve(1e4))
-    #sim.execute()
+    sim.execute()
     
     
-    _, data = pl.readdump('posring.txt')
+    _, data = pl.readdump(str(ring_dump_path))
     data *= 1e6
     
     final_x = data[-1, :, 0]

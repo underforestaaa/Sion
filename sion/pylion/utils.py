@@ -1,9 +1,56 @@
-import inspect
-import os
-import sys
-import warnings
-import functools
-import h5py
+# Modified for SION.
+
+from inspect import signature, getdoc, stack
+# namespace so code can keep using inspect.xxx
+class _Inspect:
+    pass
+inspect = _Inspect()
+inspect.signature, inspect.getdoc, inspect.stack = signature, getdoc, stack
+
+from linecache import getline, getlines
+class _Linecache:
+    pass
+linecache = _Linecache()
+linecache.getline = getline
+linecache.getlines = getlines
+
+from os.path import abspath, dirname
+class _Path:
+    pass
+os_path = _Path()
+os_path.abspath = abspath
+os_path.dirname = dirname
+class _Os:
+    pass
+os = _Os()
+os.path = os_path
+
+from sys import argv
+class _Sys:
+    pass
+sys = _Sys()
+sys.argv = argv
+
+from warnings import warn
+class _Warnings:
+    pass
+warnings = _Warnings()
+warnings.warn = warn
+
+import re
+
+from functools import wraps
+class _Functools:
+    pass
+functools = _Functools()
+functools.wraps = wraps
+
+from h5py import File
+class _H5:
+    pass
+h5py = _H5()
+h5py.File = File
+
 from termcolor import colored
 
 
@@ -68,7 +115,7 @@ def save_atttributes_and_files(func):
         _savecallersource(attrs['name'] + '.h5')
 
         for filename in (attrs['output_files']
-                         + ['log.lammps', attrs['name'] + '.lammps']):
+                         + [attrs['name'] + '.lmp.log', attrs['name'] + '.lammps']):
             _savescriptsource(attrs['name'] + '.h5', filename)
 
     return wrapper
@@ -77,18 +124,57 @@ def save_atttributes_and_files(func):
 def _savescriptsource(h5file, script):
     with h5py.File(h5file, 'a') as f:
         with open(script, 'rb') as pf:
-            lines = pf.readlines()
-            f.create_dataset(script, data=lines)
+            # Store raw bytes as uint8 to avoid HDF5 variable-length string
+            # conversion errors when files contain embedded NULL bytes.
+            payload = pf.read()
+            if script in f:
+                del f[script]
+            f.create_dataset(script, data=bytearray(payload), dtype='u1')
+
+
+def _savevirtualsource(h5file, source_name, lines):
+    encoded_lines = [line.encode('utf-8') for line in lines]
+    with h5py.File(h5file, 'a') as f:
+        f.create_dataset(source_name, data=encoded_lines)
+
+
+def _sanitize_source_name(source_name):
+    cleaned = source_name.strip('<>')
+    cleaned = re.sub(r'[^A-Za-z0-9._-]+', '_', cleaned)
+    return f'jupyter_{cleaned}.py'
+
+
+def _is_internal_frame(filename):
+    normalized = filename.replace('/', '\\').lower()
+    return '\\pylion\\' in normalized
 
 
 def _savecallersource(h5file):
     # inspect the first four frames of the stack to find the correct
     # filename. This covers calling from execute() or _writeinputfile().
     # if the stack is indeed larger than this it's probably the REPL.
-    stack = inspect.stack()[:5]
+    stack = inspect.stack()[:8]
     for frame in stack:
-        if sys.argv[0] == frame.filename:
+        if sys.argv[0] == frame.filename and not _is_internal_frame(frame.filename):
             _savescriptsource(h5file, frame.filename)
+            return
+
+    # In notebooks or interactive kernels, stack frames can point to virtual
+    # sources. Try to save the first non-pylion frame we can recover.
+    for frame in stack:
+        filename = frame.filename
+        if not filename or _is_internal_frame(filename):
+            continue
+
+        try:
+            _savescriptsource(h5file, filename)
+            return
+        except OSError:
+            pass
+
+        lines = linecache.getlines(filename, frame.frame.f_globals)
+        if lines:
+            _savevirtualsource(h5file, _sanitize_source_name(filename), lines)
             return
 
     # cannot save on the h5 file if using the repl

@@ -3,7 +3,7 @@
 
 cff-version: 1.2.0
 title: >-
-  Sion: Python package for simulation and analysis of ion
+  SION: Python package for simulation and analysis of ion
   crystals in surface traps
 message: >-
   If you use this software, please cite it using the
