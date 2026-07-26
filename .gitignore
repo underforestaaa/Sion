@@ -4,6 +4,7 @@ __pycache__/
 
 # Build/packaging outputs
 build/
+dist/
 *.egg-info/
 .eggs/
 surface_ion.egg-info/
@@ -13,9 +14,19 @@ sion/electrode/cexpressions.c
 sion/electrode/*.pyd
 ignore/
 
+# Local scratch / archives (do not publish)
+_archive_test/
+*.zip
+
+# Virtual environments
+.venv/
+venv/
+env/
+
 # Notebook checkpoints
 .ipynb_checkpoints/
 
 # Editor/OS noise
 .idea/
 .vscode/
+.cursor/

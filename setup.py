@@ -4,11 +4,6 @@ from Cython.Distutils import build_ext
 import numpy
 
 
-# SION is currently supported on Windows only.
-if 'win32' not in sys.platform:
-    raise RuntimeError("surface-ion currently was tested on Windows only.")
-
-
 with open('readme.md') as readme_file:
     readme = readme_file.read()
 
@@ -33,13 +28,15 @@ requirements = [
     'setuptools>=65',
 ]
 
+extra_compile_args = ["-ffast-math"] if sys.platform.startswith("linux") else []
+
 
 short_description = (
     "Python package for simulation and analysis of ion crystals in surface traps.")
 
 setup(
     name='surface-ion',
-    version='1.1.1',
+    version='1.1.2',
     description=short_description,
     long_description=readme,
     long_description_content_type='text/markdown',
@@ -68,10 +65,7 @@ setup(
                 sources=["sion/electrode/cexpressions.pyx",
                         #"electrode/cexpressions.c",
                         ],
-                extra_compile_args=[
-                    "-ffast-math", # improves expressions
-                    #"-Wa,-adhlns=cexprssions.lst", # for amusement
-                    ],
+                extra_compile_args=extra_compile_args,
                 include_dirs=[numpy.get_include()]),
         ],
     cmdclass = {"build_ext": build_ext},

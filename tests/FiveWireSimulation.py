@@ -78,11 +78,7 @@ if __name__ == "__main__":
     #files with simulation information
     s.append(pl.dump(str(positions_dump_path), variables=['x', 'y', 'z'], steps=10))
     s.append(pl.evolve(1e5))
-    try:
-        s.execute()
-        pass
-    except:
-        pass
+    s.execute()
 
     _, data = pl.readdump(str(positions_dump_path))
     data *= 1e6
