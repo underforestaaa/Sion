@@ -71,11 +71,13 @@ class SionTrap:
         p = self.rf(r_m, derivative) + np.tensordot(v, self.basis(r_m, derivative), axes=1)
         if stray_V_m is not None:
             e = finite(stray_V_m, 'stray field')
+            if e.shape!=(3,):
+                raise ValueError('stray field must have three components')
             if derivative == 0:
                 p -= self.q * np.dot(e, r_m)
             elif derivative == 1:
                 p -= self.q * e
-        return p
+        return float(np.asarray(p).item()) if derivative == 0 else p
 
     def local(self, voltage_V, seed_m, stray_V_m=None):
         seed = finite(seed_m, 'seed_m')
@@ -144,13 +146,51 @@ def load_trap(cfg):
         sys = sion.five_wire_trap_design(amp,d['top_dc'],d['bottom_dc'],d['top_rf'],
                 d['bottom_rf'],d['central_dc'],L=L,need_plot=False)
     elif cfg['kind'] == 'gds':
-        sys = sion.polygons_from_gds(cfg['path'],L=L,need_plot=False,need_coordinates=False)
-        rf = np.zeros(len(sys))
-        for index, peak in cfg['rf_electrodes'].items():
-            rf[int(index)] = float(peak)*np.sqrt(charge/mass)/(2*L*O)
-        sys.rfs = rf
+        # No implicit polygon order: fabrication layers are not channel IDs.
+        from gdspy import GdsLibrary
+        from sion.electrode import System, PolygonPixelElectrode
+        from sion.electrode.utils import area_centroid
+        lib = GdsLibrary(infile=cfg['path'])
+        cells = lib.top_level()
+        if cfg.get('cell'):
+            cells = [lib.cells[cfg['cell']]]
+        if len(cells) != 1:
+            raise ValueError('select exactly one GDS top-level cell')
+        polygons = cells[0].get_polygons(by_spec=True)
+        mapping = cfg.get('electrode_map')
+        if not mapping:
+            raise ValueError('GDS requires explicit electrode_map: name, layer, datatype')
+        electrodes=[]; used=set()
+        for entry in mapping:
+            spec=(int(entry['layer']),int(entry.get('datatype',0)))
+            if spec in used:
+                raise ValueError('GDS layer/datatype assigned twice')
+            used.add(spec)
+            paths=[]
+            for poly in polygons.get(spec,[]):
+                # gdspy coordinates are in library user units, not necessarily um.
+                poly=finite(poly,'GDS polygon')*(lib.unit/L)
+                area,_=area_centroid(poly)
+                if abs(area)<1e-18:
+                    raise ValueError('degenerate GDS polygon')
+                # Positive physical unit-voltage potential: CCW viewed from above.
+                paths.append(poly[::-1] if area<0 else poly)
+            if not paths:
+                raise ValueError('mapped GDS electrode has no polygons')
+            electrodes.append(PolygonPixelElectrode(name=entry['name'],paths=paths))
+        if len({e.name for e in electrodes})!=len(electrodes):
+            raise ValueError('unique electrode names required')
+        sys=System(electrodes)
+        rf=np.zeros(len(sys))
+        for key,peak in cfg['rf_electrodes'].items():
+            names=[e.name for e in sys]
+            index=names.index(key) if key in names else int(key)
+            rf[index]=float(peak)*np.sqrt(charge/mass)/(2*L*O)
+        sys.rfs=rf
     else:
         raise ValueError('kind must be sion_five_wire or gds; for an existing System use SionTrap')
+    if not np.isfinite(sys.rfs).all():
+        raise ValueError('RF amplitudes must be finite')
     if any(abs(sys[i].rf)>0 for i in cfg['dc_indices']):
         raise ValueError('RF electrodes must not overlap independently driven DC channels')
     adapter = SionTrap(sys,L,mass,charge,cfg['dc_indices'],cfg['lower_V'],cfg['upper_V'])
