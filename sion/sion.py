@@ -2,7 +2,7 @@ from .pylion.lammps import lammps
 import builtins
 from numpy import (ones, array, max, concatenate, pi, tanh, exp, arange, mean, min, abs, std, 
                    identity, sqrt, zeros, vstack, sum, sin, cos, diag, dot, argmax, inner, 
-                   arccos, isnan, any, sign, linspace, block, array_split)
+                   arccos, isnan, any, sign, linspace, block, array_split, hstack, setdiff1d)
 from numpy.linalg import (norm, eig, eigh, inv)
 from numpy.random import (choice, random)
 from .electrode import (System, PolygonPixelElectrode, PointPixelElectrode)
@@ -2820,7 +2820,7 @@ def stability(s, ion_masses, Omega, minimum, charges=1, L=1e-6, need_plot=True, 
         mpl.plot(q,y2, 'g')
         mpl.xlabel('q', fontsize = '30')
         mpl.ylabel('a', fontsize = '30')
-        mpl.fill_between(q, y1, y2,where=y2>=y1, interpolate = True, color = 'skyblue')
+        mpl.fill_between(q.real, y1.real, y2.real ,where=y2.real>=y1.real, interpolate = True, color = 'skyblue')
         mpl.tick_params(axis='both', which='major', labelsize=14)
         
         mpl.locator_params(axis='x', nbins=6)
@@ -2844,7 +2844,7 @@ def stability(s, ion_masses, Omega, minimum, charges=1, L=1e-6, need_plot=True, 
 Voltage optimization functions
 """
 
-def frequency_optimization(s, ion_masses, positions, axis, omegas, start_dcset, numbers=0, eps=1e-9, tol=1e-18,
+def frequency_optimization(s, ion_masses, positions, axis, omegas, start_dcset, numbers=0, symmetry=0, eps=1e-9, tol=1e-18,
                          find_initial_guess=False, call_num=2000, charges=1, L=1e-6, callback_num=100, micro=0, 
                          voltage_bounds=(-15,15), mathieu=False, r_mathieu=2, Omega_rf=None):
     """
@@ -2870,6 +2870,10 @@ def frequency_optimization(s, ion_masses, positions, axis, omegas, start_dcset, 
         Starting DC voltages for the optimization (on all electrodes).
     numbers : list shape([number of optimizing electrodes]) or int, optional, default is 0
         list of the indices of DC electrodes, used for optimization. If 0, all DC electrodes are used for optimization.
+    symmetry : list shape([number of variable electrodes][number of connected electrodes]) or int, optional, default is 0
+        list of the indices of DC electrodes which are connected: mey be changed only simultaneously. 
+        Example: symmetry=[[0,1,2], [3,4]]: voltages of electrodes V[0]=V[1]=V[2] =!= V[3]=V[4]. 
+        If 0, all DC electrodes are indepedent.
     eps : float, optional, default is 1e-9
         Maximal loss, at which the algorithm considers the implementation successful. If lower eps are possible, 
         the algorithm will keep optimizing according to tol.
@@ -2910,8 +2914,19 @@ def frequency_optimization(s, ion_masses, positions, axis, omegas, start_dcset, 
     positions = array(positions)
     try:
         numbers[0]
+        numbers = array(numbers)
     except:
         numbers = arange(len(start_dcset))
+
+    try:
+        symmetry[0][0]
+        symmetry = list(symmetry)
+    except:
+        try:
+            tr = symmetry[0]
+            symmetry = list([symmetry])
+        except:
+            symmetry = [[num] for num in numbers]
     
     try:
         M = ion_masses[0]
@@ -2925,14 +2940,20 @@ def frequency_optimization(s, ion_masses, positions, axis, omegas, start_dcset, 
         Z = charges[0]
     
     rf_set = s.rfs
-    numbers = array(numbers)
     omegas = array(omegas).T
+    if len(setdiff1d(hstack(symmetry), numbers)) > 0:
+        warn(f"\nSymmetry contains electrodes not in numbers:\nNumbers: {numbers}\nSymmetry: {symmetry}")
+    missing_numbers = setdiff1d(numbers, hstack(symmetry))
+    missing_numbers = [[mis] for mis in missing_numbers]
+    symmetry = symmetry + missing_numbers
     start_dcset = array(start_dcset, dtype=float)
 
     def v_lossf(uset):
         with catch_warnings():
             simplefilter("ignore")
-            start_dcset[[numbers]] = uset
+            for idx, val in zip(symmetry, uset):
+                for indx in idx:
+                    start_dcset[indx] = val
             pbarn.update(1)
             loss = 0
             u_set = zeros(len([rfs for rfs in s.rfs if rfs != 0]))
@@ -2942,7 +2963,7 @@ def frequency_optimization(s, ion_masses, positions, axis, omegas, start_dcset, 
                 with s.with_voltages(dcs=u_set, rfs=rf_set*sqrt(M*charges[i]/ion_masses[i]/Z)):
                     try:
                         x1 = s.minimum(pos, axis=(0, 1, 2), coord=identity(3), method="Newton-CG",
-                                    tol = 1e-5, options = {'maxiter' : 800})
+                                    tol = 1e-9, options = {'maxiter' : 800})
                         omega_sec, _ = single_ion_modes(s, x1, ion_masses[i], L=L, charge=charges[i], 
                                                         mathieu=mathieu, r=r_mathieu, Omega=Omega_rf)
                         omega_sec = omega_sec[[axis]]
@@ -2972,7 +2993,7 @@ def frequency_optimization(s, ion_masses, positions, axis, omegas, start_dcset, 
         voltage_bounds[0][0]
         voltage_bounds=list(voltage_bounds)
     except:
-        voltage_bounds = [(voltage_bounds[0],voltage_bounds[1]) for n in range(len(numbers))]
+        voltage_bounds = [(voltage_bounds[0],voltage_bounds[1]) for n in range(len(symmetry))]
 
     if find_initial_guess:
         from skopt import dummy_minimize
@@ -2985,8 +3006,10 @@ def frequency_optimization(s, ion_masses, positions, axis, omegas, start_dcset, 
                     
     else:
         with tqdm(desc='Optimizing voltages', disable=True) as pbarn:
-            uset = array(start_dcset)[[numbers]]
-            initial_uset = uset[0]
+            uset = zeros(len(symmetry))
+            for indx, indxs in enumerate(symmetry):
+                uset[indx] = start_dcset[indxs[0]]
+            initial_uset = uset
             print(f'Initial loss = {v_lossf(uset)}')
         
     with tqdm(desc='Optimizing voltages') as pbar:
@@ -2999,13 +3022,15 @@ def frequency_optimization(s, ion_masses, positions, axis, omegas, start_dcset, 
             
             print(f'Final loss = {res.fun}')
             uset = res.x
-            start_dcset[[numbers]] = uset
+            for idx, val in zip(symmetry, uset):
+                for indx in idx:
+                    start_dcset[indx] = val
             dcset = start_dcset
             print(f'Final uset = {list(dcset)}')
 
     return dcset
 
-def mode_optimization(s, alpha, potential_minimum, start_dcset, numbers=0, eps=1e-9, tol=1e-18, 
+def mode_optimization(s, alpha, positions, start_dcset, numbers=0, symmetry=0, eps=1e-9, tol=1e-18, 
                       callback_num=1000, micro=1, voltage_bounds=(-15,15)):
     """
     Optimizes set of voltages on specified electrodes, so that the radial modes are rotated by the specified angle. 
@@ -3015,14 +3040,18 @@ def mode_optimization(s, alpha, potential_minimum, start_dcset, numbers=0, eps=1
     ----------
     s : electrode.System object
         System object from *electrode* package, defining the trap
-    alpha : float
-        Angle of mode rotation in rad.
-    potential_minimum : array shape([3])
-        Coordinates of RF potential minimum.
+    alpha : float or array shape([number of positions])
+        Angle of mode rotation in rad for each position.
+    positions : list shape([number of positions, 3])
+        Positions of potential minima to which apply the angle optimization.
     start_dcset : array shape([number of dc electrodes])
         Starting DC voltages for the optimization (on all electrodes).
     numbers : list shape([number of optimizing electrodes]) or int, optional, default is 0
         list of the indices of DC electrodes, used for optimization. If 0, all DC electrodes are used for optimization.
+    symmetry : list shape([number of variable electrodes][number of connected electrodes]) or int, optional, default is 0
+        list of the indices of DC electrodes which are connected: mey be changed only simultaneously. 
+        Example: symmetry=[[0,1,2], [3,4]]: voltages of electrodes V[0]=V[1]=V[2] =!= V[3]=V[4]. 
+        If 0, all DC electrodes are indepedent.
     eps : float, optional, default is 1e-9
         Maximal loss, at which the algorithm considers the implementation successful. If lower eps are possible, 
         the algorithm will keep optimizing according to tol.
@@ -3044,37 +3073,61 @@ def mode_optimization(s, alpha, potential_minimum, start_dcset, numbers=0, eps=1
         Resulting DC voltage set.
 
     """
+    positions = array(positions)
+    try:
+        alpha[0]
+    except:
+        alpha = alpha * ones(positions.shape[0])
+  
     try:
         numbers[0]
+        numbers = array(numbers)
     except:
         numbers = arange(len(start_dcset))
-        
-    numbers = array(numbers)
+
+    try:
+        symmetry[0][0]
+        symmetry = list(symmetry)
+    except:
+        try:
+            tr = symmetry[0]
+            symmetry = list([symmetry])
+        except:
+            symmetry = [[num] for num in numbers]
+
+    rf_set = s.rfs
+    if len(setdiff1d(hstack(symmetry), numbers)) > 0:
+        warn(f"\nSymmetry contains electrodes not in numbers:\nNumbers: {numbers}\nSymmetry: {symmetry}")
+    missing_numbers = setdiff1d(numbers, hstack(symmetry))
+    missing_numbers = [[mis] for mis in missing_numbers]
+    symmetry = symmetry + missing_numbers
     start_dcset = array(start_dcset, dtype=float)
     
     def v_lossf(uset):
         with catch_warnings():
             simplefilter("ignore")
-            start_dcset[[numbers]] = uset
+            for idx, val in zip(symmetry, uset):
+                for indx in idx:
+                    start_dcset[indx] = val
             pbarn.update(1)
             loss = 0
             u_set = zeros(len([rfs for rfs in s.rfs if rfs != 0]))
             u_set = concatenate([u_set, start_dcset])
-            
-            with s.with_voltages(dcs=u_set, rfs=None):
-                try:
-                    x1 = s.minimum(potential_minimum*1.001, axis=(0, 1, 2), coord=identity(3), method="Newton-CG",
-                                   tol = 1e-6, options = {'maxiter' : 2000})
-                    _, mod_dir = s.modes(x1, sorted=False)
-                    
-                    e1 = array([0,0,1])
-                    alp = arccos(inner(mod_dir[2],e1))
-                    
-                    loss += (alpha - alp)**2
-                    loss += micro * norm(x1 - potential_minimum)**2
-    
-                except: 
-                    loss += 10
+            for pos, alph in zip(positions, alpha):
+                with s.with_voltages(dcs=u_set, rfs=None):
+                    try:
+                        x1 = s.minimum(pos*1.001, axis=(0, 1, 2), coord=identity(3), method="Newton-CG",
+                                       tol = 1e-9, options = {'maxiter' : 2000})
+                        _, mod_dir = s.modes(x1, sorted=False)
+                        
+                        e1 = array([0,0,1])
+                        alp = arccos(inner(mod_dir[2],e1))
+                        
+                        loss += min([abs(sin(alph)**2 - sin(alp)**2), abs(cos(alph)**2 - cos(alp)**2)])
+                        loss += micro * norm(x1 - pos)**2
+        
+                    except: 
+                        loss += 1000
 
         return loss
 
@@ -3091,11 +3144,13 @@ def mode_optimization(s, alpha, potential_minimum, start_dcset, numbers=0, eps=1
         voltage_bounds[0][0]
         voltage_bounds=list(voltage_bounds)
     except:
-        voltage_bounds = [(voltage_bounds[0],voltage_bounds[1]) for n in range(len(numbers))]
+        voltage_bounds = [(voltage_bounds[0],voltage_bounds[1]) for n in range(len(symmetry))]
 
     with tqdm(desc='Optimizing voltages', disable=True) as pbarn:
-        uset = array(start_dcset)[[numbers]]
-        initial_uset = uset[0]
+        uset = zeros(len(symmetry))
+        for indx, indxs in enumerate(symmetry):
+            uset[indx] = start_dcset[indxs[0]]
+        initial_uset = uset
         print(f'Initial loss = {v_lossf(uset)}')
     
     with tqdm(desc='Optimizing voltages') as pbar:
@@ -3108,13 +3163,15 @@ def mode_optimization(s, alpha, potential_minimum, start_dcset, numbers=0, eps=1
             
             print(f'Final loss = {res.fun}')
             uset = res.x
-            start_dcset[[numbers]] = uset
+            for idx, val in zip(symmetry, uset):
+                for indx in idx:
+                    start_dcset[indx] = val
             dcset = start_dcset
             print(f'Final uset = {list(dcset)}')
     
     return dcset
 
-def position_optimization(s, positions, start_dcset, numbers=0, eps=1e-2, tol=1e-18,
+def position_optimization(s, positions, start_dcset, numbers=0, symmetry=0, eps=1e-2, tol=1e-18,
                           ion_masses=1, charges=1, callback_num=100, voltage_bounds=(-15,15)):
     """
     Optimizes set of voltages on specified electrodes, so that the potential minimum positions match the desired ones.
@@ -3129,6 +3186,10 @@ def position_optimization(s, positions, start_dcset, numbers=0, eps=1e-2, tol=1e
         Starting DC voltages for the optimization (on all electrodes).
     numbers : list shape([number of optimizing electrodes]) or int, optional, default is 0
         list of the indices of DC electrodes, used for optimization. If 0, all DC electrodes are used for optimization.
+    symmetry : list shape([number of variable electrodes][number of connected electrodes]) or int, optional, default is 0
+        list of the indices of DC electrodes which are connected: mey be changed only simultaneously. 
+        Example: symmetry=[[0,1,2], [3,4]]: voltages of electrodes V[0]=V[1]=V[2] =!= V[3]=V[4]. 
+        If 0, all DC electrodes are indepedent.
     eps : float, optional, default is 1e-2
         Maximal loss, at which the algorithm considers the implementation successful. If lower eps are possible, 
         the algorithm will keep optimizing according to tol.
@@ -3151,11 +3212,22 @@ def position_optimization(s, positions, start_dcset, numbers=0, eps=1e-2, tol=1e
         Resulting DC voltage set.
 
     """
-    positions = array(positions)
+    positions = array(positions, dtype=float)
     try:
         numbers[0]
+        numbers = array(numbers)
     except:
         numbers = arange(len(start_dcset))
+
+    try:
+        symmetry[0][0]
+        symmetry = list(symmetry)
+    except:
+        try:
+            tr = symmetry[0]
+            symmetry = list([symmetry])
+        except:
+            symmetry = [[num] for num in numbers]
     
     try:
         M = ion_masses[0]
@@ -3169,23 +3241,30 @@ def position_optimization(s, positions, start_dcset, numbers=0, eps=1e-2, tol=1e
         Z = charges[0]
     
     rf_set = s.rfs
-    numbers = array(numbers)
+    if len(setdiff1d(hstack(symmetry), numbers)) > 0:
+        warn(f"\nSymmetry contains electrodes not in numbers:\nNumbers: {numbers}\nSymmetry: {symmetry}")
+    missing_numbers = setdiff1d(numbers, hstack(symmetry))
+    missing_numbers = [[mis] for mis in missing_numbers]
+    symmetry = symmetry + missing_numbers
+
     start_dcset = array(start_dcset, dtype=float)
 
     def v_lossf(uset):
         with catch_warnings():
             simplefilter("ignore")
-            start_dcset[[numbers]] = uset
+            for idx, val in zip(symmetry, uset):
+                for indx in idx:
+                    start_dcset[indx] = val
+                    
             pbarn.update(1)
             loss = 0
             u_set = zeros(len([rfs for rfs in s.rfs if rfs != 0]))
             u_set = concatenate([u_set, start_dcset])
-            
             for i, pos in enumerate(positions):
                 with s.with_voltages(dcs=u_set, rfs=rf_set*sqrt(M*charges[i]/ion_masses[i]/Z)):
                     try:
                         x1 = s.minimum(pos*1.001, axis=(0, 1, 2), coord=identity(3), method="Newton-CG",
-                                    tol = 1e-9, options = {'maxiter' : 2000})                        
+                                    tol = 1e-9, options = {'maxiter' : 2000})   
                         loss += norm(x1-pos)**2
         
                     except: 
@@ -3206,12 +3285,14 @@ def position_optimization(s, positions, start_dcset, numbers=0, eps=1e-2, tol=1e
         voltage_bounds[0][0]
         voltage_bounds=list(voltage_bounds)
     except:
-        voltage_bounds = [(voltage_bounds[0],voltage_bounds[1]) for n in range(len(numbers))]
+        voltage_bounds = [(voltage_bounds[0],voltage_bounds[1]) for n in range(len(symmetry))]
 
   
     with tqdm(desc='Optimizing voltages', disable=True) as pbarn:
-        uset = array(start_dcset)[[numbers]]
-        initial_uset = uset[0]
+        uset = zeros(len(symmetry))
+        for indx, indxs in enumerate(symmetry):
+            uset[indx] = start_dcset[indxs[0]]
+        initial_uset = uset
         print(f'Initial loss = {v_lossf(uset)}')
     
     with tqdm(desc='Optimizing voltages') as pbar:
@@ -3224,7 +3305,9 @@ def position_optimization(s, positions, start_dcset, numbers=0, eps=1e-2, tol=1e
             
             print(f'Final loss = {res.fun}')
             uset = res.x
-            start_dcset[[numbers]] = uset
+            for idx, val in zip(symmetry, uset):
+                for indx in idx:
+                    start_dcset[indx] = val
             dcset = start_dcset
             print(f'Final uset = {list(dcset)}')
     
