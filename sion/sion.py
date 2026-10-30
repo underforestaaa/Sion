@@ -6,7 +6,7 @@ from numpy import (ones, array, max, concatenate, pi, tanh, exp, arange, mean, m
 from numpy.linalg import (norm, eig, eigh, inv)
 from numpy.random import (choice, random)
 from .electrode import (System, PolygonPixelElectrode, PointPixelElectrode)
-from scipy.optimize import (minimize, curve_fit)
+from scipy.optimize import (minimize, curve_fit, basinhopping, approx_fprime)
 from scipy.constants import e, epsilon_0, atomic_mass
 # namespace so code can keep using ct.e, ct.epsilon_0, ct.atomic_mass
 class _CT:
@@ -2074,8 +2074,17 @@ def equilibrium_ion_positions(s, dc_set, ion_masses, ion_number, potential_minim
             for i in range(N):
                 positions_guess[i] = x_min - array([l*(N-1)/2, 0, 0]) + array([i*l,0,0])
 
+    
     positions_guess = concatenate(positions_guess)
-    res = minimize(system_potential, positions_guess, method='L-BFGS-B', tol = 1e-16)
+
+
+    def gradient(x):
+        return approx_fprime(x, system_potential, epsilon=1e-6)
+
+    minimizer_kwargs = {"method" : "L-BFGS-B", "jac" : gradient, "tol" : 1e-7}
+
+    res = basinhopping(system_potential, positions_guess, minimizer_kwargs=minimizer_kwargs)
+
     equilibrium_positions = array(array_split(res.x, N))
 
     return equilibrium_positions
