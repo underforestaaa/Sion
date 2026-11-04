@@ -224,7 +224,7 @@ class Simulation(list):
 
         # do a couple of checks
         # check for uids clashing
-        uids = list(filter(None.__ne__, self._uids))
+        uids = [uid for uid in self._uids if uid is not None]
         if len(uids) > len(set(uids)):
             raise SimulationError(
                 "There are identical 'uids'. Although this is allowed in some "

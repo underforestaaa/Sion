@@ -45,9 +45,4 @@ Free software: GNU GENERAL PUBLIC LICENSE
 *   Optimization of DC voltage set of a planar trap to match the desired secular frequency and radial mode rotation angle in given positions.
 *   Convenient trap design. Layout may be imported from GDS file or created by defining the arbitrary electrode shape boundary. 
 
-## Possible issues
-
-*  The following error may occur from trying to execute simulation two times without restarting the kernel. It is specific to IPython IDEs (Jupyter, spyder). The error will be resolved by restarting the kernel.
-
-<code>SimulationError: There are identical 'uids'. Although this is allowed in some  cases, 'lammps' is probably not going to like it.</code>
 

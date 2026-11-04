@@ -9,6 +9,7 @@ dist/
 .eggs/
 surface_ion.egg-info/
 examples/supplementary/
+benchmark/supplementary/
 tests/supplementary/
 sion/electrode/cexpressions.c
 sion/electrode/*.pyd
