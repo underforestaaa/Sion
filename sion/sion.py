@@ -1992,7 +1992,7 @@ def single_ion_modes(s, potential_minimum, ion_mass, L=1e-6, charge=1, mathieu=F
     return omegas, ion_modes
 
 def equilibrium_ion_positions(s, dc_set, ion_masses, ion_number, potential_minimum=None, L=1e-6, 
-                              charges=1, positions_guess=None):
+                              charges=1, positions_guess=None, epsilon=1e-6, tol=1e-7):
     '''
     Calculates the equilibrium ion positions in a crystal in pseudopotential approximation by minimizing 
     the system's energy.
@@ -2016,6 +2016,10 @@ def equilibrium_ion_positions(s, dc_set, ion_masses, ion_number, potential_minim
         Scaled for elementary charge. 
     positions_guess : np.array shape([ion_number, 3]), optional, default is None
         If not None -- initial guess for ion positions in the crystal. If None, potential_minimum should be not None.
+    epsilon : float, optional, default is 1e-6
+            Accuracy of the approximate gradient for basinhopping
+    tol : float, optional, default is 1e-7
+            Tolerance of the basinhopping convergence
 
     Returns
     -------
@@ -2079,9 +2083,9 @@ def equilibrium_ion_positions(s, dc_set, ion_masses, ion_number, potential_minim
 
 
     def gradient(x):
-        return approx_fprime(x, system_potential, epsilon=1e-6)
+        return approx_fprime(x, system_potential, epsilon=epsilon)
 
-    minimizer_kwargs = {"method" : "L-BFGS-B", "jac" : gradient, "tol" : 1e-7}
+    minimizer_kwargs = {"method" : "L-BFGS-B", "jac" : gradient, "tol" : tol}
 
     res = basinhopping(system_potential, positions_guess, minimizer_kwargs=minimizer_kwargs)
 
