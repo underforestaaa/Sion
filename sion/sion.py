@@ -38,7 +38,7 @@ Functions, simulating the ion dynamics above planar traps
 """
 
 @lammps.fix
-def polygon_trap(uid, Omega, rf_voltages, dc_voltages, RFs, DCs, cover=(0, 0)):
+def polygon_trap(uid, Omega, rf_voltages, dc_voltages, RFs, DCs, cover=(0, 0), timestep=None):
     """
     Simulates an arbitrary planar trap with polygonal electrodes. Everything must be in standard units.
 
@@ -60,6 +60,8 @@ def polygon_trap(uid, Omega, rf_voltages, dc_voltages, RFs, DCs, cover=(0, 0)):
     cover : list shape([2]), optional, default is (0,0)
         array [cover_number, cover_height] - number of the terms in
         cover electrode influence expansion (5 is mostly enough) and its height.
+    timestep : float, optional, default is None
+        If not None - passed timestep for MD simulation. else - 1/(20*Omega)
 
     Returns
     -------
@@ -78,7 +80,10 @@ def polygon_trap(uid, Omega, rf_voltages, dc_voltages, RFs, DCs, cover=(0, 0)):
     Omega = array(Omega)
     lines = [
         f'\n# Creating a polygonal Surface Electrode Trap... (fixID={uid})']
-    odict['timestep'] = 1 / max(Omega) / 20
+    if timestep is None:
+        odict['timestep'] = 1 / max(Omega) / 20
+    else:
+        odict['timestep'] = timestep
     for i in range(nrf):
         lines.append(
             f'variable phase{uid}{i:d}\t\tequal "{Omega[i]:e}*step*dt"')
@@ -238,7 +243,7 @@ def polygon_trap(uid, Omega, rf_voltages, dc_voltages, RFs, DCs, cover=(0, 0)):
     return odict
 
 @lammps.fix
-def point_trap(uid, trap, cover=(0, 0)):
+def point_trap(uid, trap, cover=(0, 0), timestep=None):
     """
     Simulates an arbitrary point trap. The point trap means a trap of an arbitrary shape, which is approximated by 
     circle-shaped electrodes, called points. The points potential is approximated from the fact, that it has 
@@ -260,6 +265,8 @@ def point_trap(uid, trap, cover=(0, 0)):
     cover : [cover_max, cover_height], optional, default is (0,0)
         array [cover_number, cover_height] - number of the terms incover electrode influence expansion 
         (5 is mostly enough) and its height.
+    timestep : float, optional, default is None
+        If not None - passed timestep for MD simulation. else - 1/(20*Omega)
     
     Returns
     -------
@@ -273,7 +280,10 @@ def point_trap(uid, trap, cover=(0, 0)):
     for elec in trap[0]:
         Omega.append(elec[0])
     Omega = array(Omega)
-    odict['timestep'] = 1 / max(Omega) / 20
+    if timestep is None:
+        odict['timestep'] = 1 / max(Omega) / 20
+    else:
+        odict['timestep'] = timestep
     n_rf_elecs = len(Omega)
     for i in range(n_rf_elecs):
         lines.append(
@@ -377,7 +387,7 @@ def point_trap(uid, trap, cover=(0, 0)):
 
 
 @lammps.fix
-def ringtrap(uid, Omega, r, R, r_dc, RF_voltage, dc_voltage, resolution=100, cover=(0, 0)):
+def ringtrap(uid, Omega, r, R, r_dc, RF_voltage, dc_voltage, resolution=100, cover=(0, 0), timestep=None):
     """
     Simulates a ring-shaped RF electrode with central DC electrode
     
@@ -400,6 +410,9 @@ def ringtrap(uid, Omega, r, R, r_dc, RF_voltage, dc_voltage, resolution=100, cov
     cover : [cover_max, cover_height], optional, default is (0,0)
         array [cover_number, cover_height] - number of the terms in cover electrode influence expansion 
         (5 is mostly enough) and its height.
+    timestep : float, optional, default is None
+        If not None - passed timestep for MD simulation. else - 1/(20*Omega)
+
     Returns
     -------
     odict : str
@@ -409,7 +422,7 @@ def ringtrap(uid, Omega, r, R, r_dc, RF_voltage, dc_voltage, resolution=100, cov
     _, trap = ring_trap_design(RF_voltage, Omega, r, R, r_dc, dc_voltage, res=resolution, need_coordinates=True, 
                                cheight=cover[0], cmax=cover[1])
 
-    return point_trap(trap, cover)
+    return point_trap(trap, cover, timestep)
 
 
 """
@@ -745,7 +758,7 @@ def shuttling_voltage(s, starts, routes, T, dc_set, shuttlers=0, vmin=-15, vmax=
         return volt_seq
 
 @lammps.fix
-def polygon_shuttling(uid, Omega, rf_set, RFs, DCs, shuttlers, cover=(0, 0)):
+def polygon_shuttling(uid, Omega, rf_set, RFs, DCs, shuttlers, cover=(0, 0), timestep=None):
     """
     Simulates an arbitrary planar trap with polygonal electrodes and shuttling in this trap. The shuttling is specified
     by the voltage sequence on the DC electrodes, in terms of some smooth function V(t).
@@ -771,6 +784,8 @@ def polygon_shuttling(uid, Omega, rf_set, RFs, DCs, shuttlers, cover=(0, 0)):
     cover : list shape([2]), optional, default is (0,0)
         array [cover_number, cover_height] - number of the terms in
         cover electrode influence expansion (5 is mostly enough) and its height.
+    timestep : float, optional, default is None
+        If not None - passed timestep for MD simulation. else - 1/(20*Omega)
 
     Returns
     -------
@@ -787,7 +802,10 @@ def polygon_shuttling(uid, Omega, rf_set, RFs, DCs, shuttlers, cover=(0, 0)):
     Omega = array(Omega)
     lines = [
         f'\n# Creating a polygonal Surface Electrode Trap... (fixID={uid})']
-    odict['timestep'] = 1 / max(Omega) / 20
+    if timestep is None:
+        odict['timestep'] = 1 / max(Omega) / 20
+    else:
+        odict['timestep'] = timestep
     for i in range(nrf):
         lines.append(
             f'variable phase{uid}{i:d}\t\tequal "{Omega[i]:e}*step*dt"')

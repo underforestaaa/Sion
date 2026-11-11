@@ -14,6 +14,7 @@ tests/supplementary/
 sion/electrode/cexpressions.c
 sion/electrode/*.pyd
 ignore/
+diagnostics/
 
 # Local scratch / archives (do not publish)
 _archive_test/
