@@ -2,9 +2,10 @@ from .pylion.lammps import lammps
 import builtins
 from numpy import (ones, array, max, concatenate, pi, tanh, exp, arange, mean, min, abs, std, 
                    identity, sqrt, zeros, vstack, sum, sin, cos, diag, dot, argmax, inner, 
-                   arccos, isnan, any, sign, linspace, block, array_split, hstack, setdiff1d)
+                   arccos, isnan, any, sign, linspace, block, array_split, hstack, setdiff1d,
+                   asarray, einsum, full, isfinite, tile, triu_indices, add)
 from numpy.linalg import (norm, eig, eigh, inv)
-from numpy.random import (choice, random)
+from numpy.random import (choice, random, default_rng)
 from .electrode import (System, PolygonPixelElectrode, PointPixelElectrode)
 from scipy.optimize import (minimize, curve_fit, basinhopping, approx_fprime)
 from scipy.constants import e, epsilon_0, atomic_mass
@@ -2009,107 +2010,232 @@ def single_ion_modes(s, potential_minimum, ion_mass, L=1e-6, charge=1, mathieu=F
         
     return omegas, ion_modes
 
-def equilibrium_ion_positions(s, dc_set, ion_masses, ion_number, potential_minimum=None, L=1e-6, 
-                              charges=1, positions_guess=None, epsilon=1e-6, tol=1e-7):
-    '''
-    Calculates the equilibrium ion positions in a crystal in pseudopotential approximation by minimizing 
-    the system's energy.
+
+def _equilibrium_species(value, n, name):
+    """Convert a scalar or a one-dimensional species parameter into N values."""
+    values = asarray(value, dtype=float)
+    if values.ndim == 0:
+        return full(n, float(values))
+    if values.size != n:
+        raise ValueError(f'{name} must be a scalar or contain {n} entries')
+    return values.reshape(n).copy()
+
+
+def _equilibrium_initial_guess(s, dc_set, ion_masses, ion_number,
+                               potential_minimum, L, charges,
+                               transverse_perturbation_um, perturbation_seed):
+    """Create an axial initial chain and apply a transverse perturbation."""
+    N = int(ion_number)
+    masses = _equilibrium_species(ion_masses, N, 'ion_masses')
+    q = _equilibrium_species(charges, N, 'charges')
+    rf_set = asarray(s.rfs, dtype=float)
+    rf_set = rf_set[rf_set != 0]
+    u_set = concatenate((zeros(rf_set.size), asarray(dc_set, dtype=float).ravel()))
+
+    with s.with_voltages(dcs=u_set, rfs=None):
+        if potential_minimum is None:
+            warn('Potential minimum guess not provided; searching from [0,1,2].')
+            potential_minimum = s.minimum(array([0., 1., 2.]), method='Newton-CG')
+        x_min = asarray(s.minimum(potential_minimum, method='Newton-CG'),
+                        dtype=float).reshape(3)
+        curv, _ = s.modes(x_min, sorted=False)
+        curv = asarray(curv, dtype=float).reshape(-1)
+        if not isfinite(curv[0]) or curv[0] <= 0:
+            raise ValueError('Initial axial mode curvature is nonpositive; '
+                             'supply positions_guess.')
+        omega = sqrt(q[0] * ct.e * curv[0] / masses[0]) / L
+        # Same initial chain spacing as the benchmarked analytic implementation.
+        spacing = (q[0]**2 * ct.e**2 /
+                   (4 * pi * ct.epsilon_0 * masses[0] * omega**2))**(1/3) / L
+
+    xyz = tile(x_min, (N, 1))
+    xyz[:, 0] += (arange(N) - (N - 1)/2.0) * spacing
+
+    if N > 1 and transverse_perturbation_um > 0:
+        rng = default_rng(perturbation_seed)
+        displacement = rng.normal(size=(N, 2))
+        displacement -= mean(displacement, axis=0, keepdims=True)
+        rms = sqrt(mean((displacement * displacement).sum(axis=1)))
+        if rms == 0:
+            raise RuntimeError('Unexpected zero random transverse perturbation')
+        # Electrode coordinate unit corresponds to L meters.
+        xyz[:, 1:] += displacement * (
+            (transverse_perturbation_um * 1e-6 / L) / rms)
+    return xyz
+
+
+def make_equilibrium_initial_guess(
+        s, dc_set, ion_masses, ion_number, potential_minimum=None, L=1e-6,
+        charges=1, transverse_perturbation_um=1.0, perturbation_seed=0):
+    """Return the initial crystal positions (N, 3) in electrode coordinates.
+
+    The default guess is a line of ions along the first electrode coordinate,
+    with zero-mean random displacement in the second and third coordinates.
+    The RMS two-dimensional transverse displacement is 1 micrometer by default.
+    Set transverse_perturbation_um=0 for an unperturbed axial chain.
+    """
+    if ion_number < 1 or L <= 0 or transverse_perturbation_um < 0:
+        raise ValueError('Invalid ion number, length scale, or perturbation')
+    return _equilibrium_initial_guess(
+        s, dc_set, ion_masses, ion_number, potential_minimum, L, charges,
+        transverse_perturbation_um, perturbation_seed)
+
+def equilibrium_ion_positions(
+        s, dc_set, ion_masses, ion_number, potential_minimum=None, L=1e-6,
+        charges=1, positions_guess=None, tol=1e-7,
+        callback_num=100, niter=100, show_progress=False,
+        transverse_perturbation_um=1.0, perturbation_seed=0,
+        stepsize=0.5, T=1.0, niter_success=None):
+    
+    """Calculate equilibrium ion positions using analytic energy gradients.
+
+    The crystal equilibrium is determined by minimizing the total electrostatic
+    pseudopotential energy (including the pairwise Coulomb interaction) using
+    L-BFGS-B as the local minimizer within SciPy basin hopping. The trap energy
+    and spatial derivatives are provided by ``electrode.System.potential``.
 
     Parameters
     ----------
-    s : electrode.System object
-        Surface trap from electrode .
-    dc_set : array shape([len(DC electrodes)])
-        Set of the voltages on DC electrodes.
-    ion_masses : np.array shape([ion number]) or float
-        Either array of ion masses for mixed species crystal, or a single ion mass for a single species crystal
+    s : electrode.System
+        Electrode system defining the surface trap.
+    dc_set : array_like
+        DC voltages in electrode order, excluding the placeholder RF entries.
+    ion_masses : float or array_like, shape (ion_number,)
+        Ion masses in kilograms, scalar for a single-species crystal.
     ion_number : int
-        Ion number
-    potential_minimum : np.array shape([3]), optional, default is None
-        If not None -- guess for the potential minimum position. Not needed, if positions_guess is not None.
-    L : float, optional, default is 1e-6
-        Dimension scale of the electrode. The default is 1e-6 which means um.
-    charges : np.array shape([ion_number]) or int, optional, default is 1
-        Array of ion charges for crystals with varying charged, or a single charge for uniformly charged ions. 
-        Scaled for elementary charge. 
-    positions_guess : np.array shape([ion_number, 3]), optional, default is None
-        If not None -- initial guess for ion positions in the crystal. If None, potential_minimum should be not None.
-    epsilon : float, optional, default is 1e-6
-            Accuracy of the approximate gradient for basinhopping
-    tol : float, optional, default is 1e-7
-            Tolerance of the basinhopping convergence
+        Number of ions in the crystal.
+    potential_minimum : array_like, shape (3,), optional
+        Starting point for searching the DC potential minimum; only used if
+        positions_guess is None. If omitted, defaults to [0, 1, 2].
+    L : float, default 1e-6
+        Electrode coordinate unit in meters (1e-6 means micrometers).
+    charges : float or array_like, default 1
+        Ion charge in elementary-charge units; scalar or one per ion.
+    positions_guess : array_like, shape (ion_number, 3), optional
+        Explicit starting positions, left unchanged by the perturbation logic.
+    tol : float, default 1e-7
+        Local L-BFGS-B optimization tolerance.
+    callback_num : int, default 100
+        Print trial energy, positions, and acceptance every callback_num
+        basin-hopping callbacks when show_progress is True. Zero disables logs.
+    niter : int, default 100
+        Number of basin-hopping iterations; niter=0 performs local minimization.
+    show_progress : bool, default False
+        If True, show tqdm progress, the initial/final energy, and callback logs.
+    transverse_perturbation_um : float, default 1.0
+        RMS transverse displacement in micrometers for an automatic guess.
+        Set to zero to disable. Not applied to a supplied positions_guess.
+    perturbation_seed : int or None, default 0
+        Seed for the automatic initial displacement, for reproducibility.
+    stepsize : float, default 0.5
+        Basin-hopping displacement in electrode-coordinate units.
+    T : float, default 1.0
+        Basin-hopping acceptance temperature in units of energy (eV).
+    niter_success : int or None, default None
+        Optional early-stopping setting passed to SciPy basinhopping.
 
     Returns
     -------
-    equilibrium positions : np.array shape([ion_number, 3])
-        Array of equilibrium ion positions in the surface trap. 
-    '''
-    N = ion_number
-    try:
-        charges[0]
-    except:
-        charges = ones(N)*charges
-    try:
-        ion_masses[0]
-    except:
-        ion_masses = ones(N)*ion_masses
-    rf_set = s.rfs[s.rfs != 0]
-    u_set = concatenate([zeros(len(rf_set)), dc_set])
-    
-    def system_potential(x):
-        '''
-        Returns potential energy of the ion crystal in surface trap
+    equilibrium_positions : ndarray, shape (ion_number, 3)
+        Equilibrium ion positions in electrode coordinate units.
+    """
+    N = int(ion_number)
+    if N < 1 or L <= 0 or niter < 0 or epsilon <= 0:
+        raise ValueError('Require ion_number >= 1, L > 0, niter >= 0, '
+                         'and epsilon > 0')
+    if transverse_perturbation_um < 0:
+        raise ValueError('transverse_perturbation_um must be nonnegative')
 
-        Parameters
-        ----------
-        x : np.array shape([3 * ion_number])
-            concatentated array of ion coordinates
+    masses = _equilibrium_species(ion_masses, N, 'ion_masses')
+    q = _equilibrium_species(charges, N, 'charges')
+    if not isfinite(masses).all() or (masses <= 0).any():
+        raise ValueError('ion_masses must be finite and positive')
+    if not isfinite(q).all() or (q <= 0).any():
+        raise ValueError('charges must be finite and positive')
 
-        Returns
-        -------
-        pot : float
-            Potential energy in eV
-        '''
-        x = array_split(x, N)
-        rf_set = s.rfs[s.rfs != 0]
-        pot = 0
-        for i, x0 in enumerate(x):
-            with s.with_voltages(dcs = u_set, rfs = rf_set*sqrt(ion_masses[0]*charges[i]/ion_masses[i]/charges[0])):
-                pot += s.potential(x0)
-                for j in range(i+1,N):
-                    kap = ct.e*charges[i]*charges[j] / (4*pi*ct.epsilon_0)/L
-                    pot += kap / ((x0[0] - x[j][0])**2 + (x0[1] - x[j][1])**2 + (x0[2] - x[j][2])**2) ** (0.5)
-        return pot
-    
+    rf_set = asarray(s.rfs, dtype=float)
+    rf_set = rf_set[rf_set != 0]
+    u_set = concatenate((zeros(rf_set.size), asarray(dc_set, dtype=float).ravel()))
+    rf_scales = sqrt(masses[0] * q / (masses * q[0]))
+    coulomb_coeff = ct.e / (4 * pi * ct.epsilon_0 * L)
+    ii, jj = triu_indices(N, k=1)
+    q_pairs = q[ii] * q[jj]
+
+    # Reuse voltage contexts for ions with identical RF scaling factors.
+    groups = {}
+    for i, factor in enumerate(rf_scales):
+        groups.setdefault(float(factor), []).append(i)
+
     if positions_guess is None:
-        with s.with_voltages(dcs = u_set, rfs = None):
-            if potential_minimum is None:
-                warn("Results may be wrong: potential_minimum guess is not provided.")
-                potential_minimum = s.minimum(array([0, 1, 2]), method='Newton-CG')
+        xyz0 = make_equilibrium_initial_guess(
+            s, dc_set, masses, N, potential_minimum, L, q,
+            transverse_perturbation_um, perturbation_seed)
+    else:
+        xyz0 = asarray(positions_guess, dtype=float)
+        if xyz0.size != 3*N:
+            raise ValueError(f'positions_guess must have {N}*3 elements')
+        xyz0 = xyz0.reshape(N, 3).copy()
+    if not isfinite(xyz0).all():
+        raise ValueError('Non-finite initial positions')
 
-            x_min = s.minimum(potential_minimum, method='Newton-CG')
-            curv_z, mod_dir = s.modes(x_min, sorted=False)
-            omega_sec=sqrt(charges[0]*ct.e*curv_z/ion_masses[0])/(L)
-            l = (ct.e**2/(4*pi*ct.epsilon_0*ion_masses[0]*omega_sec[0]**2))**(1/3)/L
-            positions_guess = zeros([N,3])
+    def value_gradient(flat):
+        xyz = asarray(flat, dtype=float).reshape(N, 3)
+        energy = 0.0
+        grad = zeros((N, 3), dtype=float)
+        for rf_scale, ids in groups.items():
+            with s.with_voltages(dcs=u_set, rfs=rf_set * rf_scale):
+                for i in ids:
+                    energy += float(asarray(s.potential(xyz[i])).reshape(()))
+                    deriv = asarray(s.potential(xyz[i], derivative=1), dtype=float)
+                    if deriv.size != 3:
+                        raise ValueError('electrode.System.potential(..., '
+                                         'derivative=1) must return three '
+                                         'spatial derivatives')
+                    grad[i] += deriv.reshape(3)
 
-            for i in range(N):
-                positions_guess[i] = x_min - array([l*(N-1)/2, 0, 0]) + array([i*l,0,0])
+        if ii.size:
+            diffs = xyz[ii] - xyz[jj]
+            dist2 = einsum('ij,ij->i', diffs, diffs)
+            if (dist2 <= 0).any():
+                raise ValueError('Coincident ions: Coulomb energy is singular')
+            invr = 1 / sqrt(dist2)
+            energy += coulomb_coeff * dot(q_pairs, invr)
+            pair_grads = -(coulomb_coeff * q_pairs * invr**3)[:, None] * diffs
+            add.at(grad, ii, pair_grads)
+            add.at(grad, jj, -pair_grads)
+        return float(energy), grad.ravel()
 
-    
-    positions_guess = concatenate(positions_guess)
+    minimizer_kwargs = {'method': 'L-BFGS-B', 'jac': True, 'tol': tol}
+    bh_opts = dict(niter=niter, minimizer_kwargs=minimizer_kwargs,
+                   stepsize=stepsize, T=T, niter_success=niter_success)
+
+    if show_progress:
+        initial_energy, _ = value_gradient(xyz0.ravel())
+        print(f'Initial energy = {initial_energy}')
+        with tqdm(total=niter + 1,
+                  desc='Optimizing equilibrium positions', unit='minimum') as bar:
+            count = 0
+
+            def callback(x, f, accept):
+                nonlocal count
+                count += 1
+                bar.update(1)
+                if callback_num and count % callback_num == 0:
+                    tqdm.write(f'Trial energy = {f}')
+                    tqdm.write(f'Trial positions = {asarray(x).reshape(N, 3).tolist()}')
+                    tqdm.write(f'Accepted = {accept}')
+                return False
+
+            result = basinhopping(value_gradient, xyz0.ravel(),
+                                 callback=callback, **bh_opts)
+        print(f'Final energy = {result.fun}')
+    else:
+        result = basinhopping(value_gradient, xyz0.ravel(), **bh_opts)
+    return asarray(result.x, dtype=float).reshape(N, 3)
 
 
-    def gradient(x):
-        return approx_fprime(x, system_potential, epsilon=epsilon)
 
-    minimizer_kwargs = {"method" : "L-BFGS-B", "jac" : gradient, "tol" : tol}
 
-    res = basinhopping(system_potential, positions_guess, minimizer_kwargs=minimizer_kwargs)
-
-    equilibrium_positions = array(array_split(res.x, N))
-
-    return equilibrium_positions
 
 def hessian(ion_positions, omega_sec, ion_masses, charges):
     '''
