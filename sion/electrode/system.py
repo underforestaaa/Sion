@@ -452,7 +452,7 @@ class System(list):
         --------
         scipy.optimize.minimize
         """
-        x = np.array(x0)
+        x = np.array(x0, dtype=float).copy()
         axis = list(axis)
         def f(xi):
             x[axis] = xi
@@ -467,7 +467,7 @@ class System(list):
                     coord)[0, axis][:, axis]
         #xs = optimize.fmin_bfgs(p, np.array(x0)[axis], fprime=g,
         #        disp=False)
-        x0 = np.array(x0)[axis]
+        x0 = np.array(x0, dtype=float).copy()[axis]
         res = optimize.minimize(fun=f, x0=x0, jac=g, hess=h,
             method=method, **kwargs)
         if not res.success:
@@ -500,7 +500,7 @@ class System(list):
         """
         kwargs = dict(dx_max=.1, xtol=1e-5, ftol=1e-5)
         kwargs.update(kw)
-        x = np.array(x0)
+        x = np.array(x0, dtype=float).copy()
         axis = list(axis)
         def f(xi):
             x[axis] = xi
@@ -512,7 +512,7 @@ class System(list):
         h = rotate_tensor(self.potential(np.dot(coord, x), 2),
                 coord.T)[0, axis][:, axis]
         # rational function optimization
-        xs, p, ret = rfo(f, g, np.array(x0)[axis], h=h, **kwargs)
+        xs, p, ret = rfo(f, g, np.array(x0, dtype=float).copy()[axis], h=h, **kwargs)
         if not ret in ("ftol", "xtol"):
             raise ValueError("%s", ((x0, axis, x, xs, p, ret),))
         # f(xs) # update x
@@ -587,7 +587,7 @@ class System(list):
                         *args, **kwargs)
         axis = list(axis)
         t, p, q = t0, v0[axis], x0[axis]
-        x0 = np.array(x0)
+        x0 = np.array(x0, dtype=float).copy()
         def ddx(t, q, f):
             x0[axis] = q
             f[:] = self.time_potential(x0, 1, t, expand=True)[0, axis]
@@ -730,8 +730,8 @@ class System(list):
         for ci in constraints:
             obj.extend(ci.objective(self, p))
             ctrs.extend(ci.constraints(self, p))
-        B = np.array([i[0] for i in obj])
-        b = np.array([i[1] for i in obj])
+        B = np.array([i[0] for i in obj], dtype=float).copy()
+        b = np.array([i[1] for i in obj], dtype=float).copy()
         # the inhomogeneous solution
         Bp = np.linalg.pinv(B, rcond=rcond)
         g = np.dot(Bp, b)

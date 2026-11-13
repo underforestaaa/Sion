@@ -3,11 +3,11 @@ import builtins
 from numpy import (ones, array, max, concatenate, pi, tanh, exp, arange, mean, min, abs, std, 
                    identity, sqrt, zeros, vstack, sum, sin, cos, diag, dot, argmax, inner, 
                    arccos, isnan, any, sign, linspace, block, array_split, hstack, setdiff1d,
-                   asarray, einsum, full, isfinite, tile, triu_indices, add)
+                   asarray, einsum, full, isfinite, tile, triu_indices, add, imag, clip)
 from numpy.linalg import (norm, eig, eigh, inv)
 from numpy.random import (choice, random, default_rng)
 from .electrode import (System, PolygonPixelElectrode, PointPixelElectrode)
-from scipy.optimize import (minimize, curve_fit, basinhopping, approx_fprime)
+from scipy.optimize import (minimize, curve_fit, basinhopping)
 from scipy.constants import e, epsilon_0, atomic_mass
 # namespace so code can keep using ct.e, ct.epsilon_0, ct.atomic_mass
 class _CT:
@@ -2140,9 +2140,8 @@ def equilibrium_ion_positions(
         Equilibrium ion positions in electrode coordinate units.
     """
     N = int(ion_number)
-    if N < 1 or L <= 0 or niter < 0 or epsilon <= 0:
-        raise ValueError('Require ion_number >= 1, L > 0, niter >= 0, '
-                         'and epsilon > 0')
+    if N < 1 or L <= 0 or niter < 0 :
+        raise ValueError('Require ion_number >= 1, L > 0, niter >= 0')
     if transverse_perturbation_um < 0:
         raise ValueError('transverse_perturbation_um must be nonnegative')
 
@@ -2899,27 +2898,43 @@ def stability(s, ion_masses, Omega, minimum, charges=1, L=1e-6, need_plot=True, 
             a = 4*scale*s.electrical_potential(x1, "dc", 2, expand=True)[0] 
             q = 4*sqrt(scale)*s.electrical_potential(x1, "rf", 2, expand=True)[0]      
             a, q = array(a), array(q)
-            A = a
-            Q = q
-            A = A[1:3, 1:3]
-            Q = Q[1:3, 1:3]
+            A = asarray(a)[1:3, 1:3]
+            Q = asarray(q)[1:3, 1:3]
+
+            def checked_real_matrix(M, name, tol=1e-10):
+                M = asarray(M)
+
+                imaginary = max(abs(imag(M)))
+                magnitude = max([max(abs(M)), 1e-30])
+
+                if imaginary > tol * magnitude:
+                    raise ValueError(
+                        f"{name} has significant imaginary components: "
+                        f"relative magnitude = {imaginary / magnitude:.3e}"
+                    )
+
+                return asarray(M.real, dtype=float)
+
+            A = checked_real_matrix(A, "DC Hessian")
+            Q = checked_real_matrix(Q, "RF Hessian")
 
             DiagA, BasA = eig(A)
             DiagA = diag(DiagA)
-            areal = DiagA[0,0]
+            areal = DiagA[0,0].real
             alpha = abs(-DiagA[1,1]/areal)
 
             DiagQ, BasQ = eig(Q)
             DiagQ = diag(DiagQ)
-            qreal = DiagQ[0,0]
-            params[f'Ion (M = {round(M/ct.atomic_mass):d}, Z = {round(Z/ct.e):d})'] = {'a':areal, 'q':qreal}
+            qreal = DiagQ[0,0].real
+            params[f'Ion (M = {round(M/ct.atomic_mass):d}, Z = {round(Z/ct.e):d})'] = {'a':areal, 'q':qreal, 'A': A,'Q': Q}
 
-    rot = dot(inv(BasQ),BasA)
-    theta = arccos(rot[0,0])
+    rot = dot(inv(BasQ), BasA)
+
+    theta = arccos(clip(rot[0, 0], -1.0, 1.0)).real
     c = cos(2*theta)
     sin_2theta = sin(2*theta)
-    params['\u03B1'] = alpha
-    params['\u03B8'] = theta
+    params['alpha'] = alpha
+    params['thetha'] = theta
 
     q = linspace(0,1.5, 1000)
     ax = -q**2/2
