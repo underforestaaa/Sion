@@ -2926,6 +2926,7 @@ def stability(s, ion_masses, Omega, minimum, charges=1, L=1e-6, need_plot=True, 
             DiagQ, BasQ = eig(Q)
             DiagQ = diag(DiagQ)
             qreal = DiagQ[0,0].real
+
             params[f'Ion (M = {round(M/ct.atomic_mass):d}, Z = {round(Z/ct.e):d})'] = {'a':areal, 'q':qreal, 'A': A,'Q': Q}
 
     rot = dot(inv(BasQ), BasA)
@@ -2970,6 +2971,21 @@ def stability(s, ion_masses, Omega, minimum, charges=1, L=1e-6, need_plot=True, 
         a_crit_lower = -1
         a_crit_upper = 1
     params['Critical q'] = q_crit
+
+    # Check stability for each ion species
+    for M, Z in zip(ion_masses, charges):
+        ion_key = f'Ion (M = {round(M/ct.atomic_mass):d}, Z = {round(Z/ct.e):d})'
+
+        a0 = float(params[ion_key]['a'])
+        q0 = float(params[ion_key]['q'])
+
+        # Stability boundaries at the ion's q
+        y1_ion = max([hh*q0**2, ee + ff*q0 + gg*q0**2])
+        y2_ion = min([aa*q0**2, bb + cc*q0 + dd*q0**2])
+
+        params[ion_key]['is_stable'] = bool(
+            0 <= q0 < q_crit and y1_ion < a0 < y2_ion
+        )
 
     
     if need_plot:
