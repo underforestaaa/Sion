@@ -5,7 +5,7 @@ Python package for simulation and analysis of ion crystals in surface electrode 
 
 ***
 The package combines voltage optimization algorithms, time-dependent and anharmonic normal modes calculation with ion-dynamics simulation in LAMMPS. *SION* is built upon two packages: [electrode](https://github.com/nist-ionstorage/electrode) for surface trap potential initialization in Python and [pyLIon](https://bitbucket.org/dtrypogeorgos/pylion/src/master/) for LAMMPS simulation initialization.
-LAMMPS-based molecular dynamics simulations provide a reliable baseline for modeling ion-crystal behavior with only gapless and infinite-planar approximations.
+LAMMPS-based molecular dynamics simulations provide a reliable baseline for modeling ion-crystal behavior with gapless and infinite-planar approximations.
 ***
 
 
@@ -27,11 +27,14 @@ The following software must be installed to use *SION*:
 
 *  Multiprocessing uses [Microsoft MPI](https://learn.microsoft.com/en-us/message-passing-interface/microsoft-mpi) (MS-MPI).
 
+*  Package requires installed C language compiler, such as CMake or Visual Studio C++.
+
 
 ## Getting started
 
 *SION* works with surface traps, defined through the *electrode* package. The simulation of ion dynamics is carried through the *pylion* environment.
-All functions, presented in *SION* are described in example notebooks. Main file *sion.py* contains docs for each function.
+All functions, presented in *SION* are described in **examples**. Main file *sion.py* contains docs for each function. Additional verification is presented in **tests**, while computational benchmarks are demonstrated in **benchmark**.
+
 We recommend running through the example notebooks for a detailed understanding of the package. 
 
 To publish the results, obtained with *SION*, we kindly ask you to cite the following article:

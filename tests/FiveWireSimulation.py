@@ -132,11 +132,8 @@ if __name__ == "__main__":
 
     diff = np.zeros(5)
     for i in range(5):
-        dif = axial_modes - theor_modes
+        dif = np.abs(axial_modes) - np.abs(theor_modes)
         diff[i] = np.linalg.norm(dif[i])
-        if diff[i] > 1:
-            dif = axial_modes + theor_modes
-            diff[i] = np.linalg.norm(dif[i])
     print('Difference in mode vectors', diff)
 
     # Plot of ion crystal evolution

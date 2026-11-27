@@ -36,7 +36,7 @@ short_description = (
 
 setup(
     name='surface-ion',
-    version='1.1.2',
+    version='1.2.0',
     description=short_description,
     long_description=readme,
     long_description_content_type='text/markdown',
